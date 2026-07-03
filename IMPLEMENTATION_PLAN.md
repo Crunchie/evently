@@ -193,13 +193,14 @@ WhiteNoise; `.env.example`, `.gitignore`, `.dockerignore`, Dockerfile, docker-co
   fully runnable, and SQLite **WAL is confirmed active**. That covers Phase 1's
   makemigrations — Phase 1 now just adds the admin registration + constraint tests.
 
-### Phase 1 — Data model + admin backoffice ⬜
-Finalise `core/models.py` (✅ drafted); `makemigrations` + `migrate`; enable WAL; register
-everything in Django admin with sensible list displays and inlines (attendees inline on
-invitations; channels inline on contacts) — this is the free organizer CRUD (§2.6/§9).
-- **Gate:** via admin, create an event + contacts + a household, build an invitation with
-  attendee rows; constraints hold (can't double-invite; contact XOR household). Migrations
-  committed. Tests cover constraints + `expected_headcount`.
+### Phase 1 — Data model + admin backoffice ✅
+Models + migration + WAL done in Phase 0. Registered everything in the Django admin with
+list displays + inlines (attendees inline on invitations; channels inline on contacts;
+members inline on households; append-only `RsvpEvent` view-only) — the free organizer CRUD.
+- **Gate — passing:** `manage.py check` clean; tests cover the constraints (contact XOR
+  household, no double-invite, one preferred channel/contact, one attendee row/person) and
+  `expected_headcount` (individuals + household members + envelope plus-ones); admin
+  changelists + the invitation add-form (with attendee inline) all render 200. 8 tests green.
 
 ### Phase 2 — Organizer auth (Cloudflare Access) ⬜
 `core/auth.py`: middleware validating the `Cf-Access-Jwt-Assertion` JWT against the team
