@@ -228,6 +228,10 @@ class Invitation(TimestampedModel):
         OPENED = "opened", "Opened"  # first link click — the real delivery signal
         RESPONDED = "responded", "Responded"
         BOUNCED = "bounced", "Bounced"
+        # Uninvited (§2.2): soft-revoke, never delete — deleting the invitation would
+        # CASCADE through attendees → rsvp_events and destroy history the design says
+        # to retain. The link shows the soft "no longer available" page.
+        REVOKED = "revoked", "Revoked"
 
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="invitations")
     contact = models.ForeignKey(

@@ -10,7 +10,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env}
       - DEBUG=0
       - DATA_DIR=/data
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:?set ALLOWED_HOSTS in .env}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
       - EMAIL_REPLY_TO=${EMAIL_REPLY_TO:-}
@@ -39,6 +39,8 @@ services:
   litestream:
     image: litestream/litestream:latest
     command: replicate
+    # Same host user as the app so backup files in ./data aren't root-owned.
+    user: "${PUID:-1001}:${PGID:-1001}"
     volumes:
       - ./data:/data
       - ./litestream.yml:/etc/litestream.yml:ro

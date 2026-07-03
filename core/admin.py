@@ -2,6 +2,7 @@
 dashboard + send queue are hand-built later (Phase 6)."""
 
 from django.contrib import admin
+from django.db.models import Count
 
 from .models import (
     Contact,
@@ -50,11 +51,15 @@ class TagAdmin(admin.ModelAdmin):
 class HouseholdAdmin(admin.ModelAdmin):
     list_display = ("name", "primary_contact", "member_count")
     search_fields = ("name",)
+    list_select_related = ("primary_contact",)
     inlines = [HouseholdMemberInline]
 
-    @admin.display(description="members")
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_member_count=Count("members"))
+
+    @admin.display(description="members", ordering="_member_count")
     def member_count(self, obj):
-        return obj.members.count()
+        return obj._member_count
 
 
 @admin.register(Contact)
@@ -62,6 +67,7 @@ class ContactAdmin(admin.ModelAdmin):
     list_display = ("name", "nickname", "household", "preferred_channel")
     list_filter = ("tags", "household")
     search_fields = ("name", "nickname")
+    list_select_related = ("household",)
     filter_horizontal = ("tags",)
     inlines = [ContactChannelInline]
 
@@ -72,6 +78,7 @@ class ContactChannelAdmin(admin.ModelAdmin):
     list_display = ("contact", "kind", "value", "is_preferred", "status", "source")
     list_filter = ("status", "kind", "source")
     search_fields = ("contact__name", "value")
+    list_select_related = ("contact",)
 
 
 # --- Events / invitations --------------------------------------------------- #
@@ -89,6 +96,7 @@ class InvitationAdmin(admin.ModelAdmin):
     list_display = ("event", "target", "state", "plus_ones", "opened_at")
     list_filter = ("state", "event")
     search_fields = ("contact__name", "household__name", "token")
+    list_select_related = ("event", "contact", "household")
     readonly_fields = ("token", "created_at", "updated_at")
     inlines = [InvitationAttendeeInline]
 
@@ -102,22 +110,33 @@ class InvitationAttendeeAdmin(admin.ModelAdmin):
     list_display = ("invitation", "contact", "rsvp_status")
     list_filter = ("rsvp_status",)
     search_fields = ("contact__name",)
+    # __str__ of invitation touches event + contact/household — avoid N+1 per row.
+    list_select_related = (
+        "contact",
+        "invitation__event",
+        "invitation__contact",
+        "invitation__household",
+    )
 
 
 @admin.register(Delivery)
 class DeliveryAdmin(admin.ModelAdmin):
     list_display = ("invitation", "kind", "status", "sent_at")
     list_filter = ("status", "kind")
+    list_select_related = ("invitation__event", "invitation__contact", "invitation__household")
 
 
 @admin.register(RsvpEvent)
 class RsvpEventAdmin(admin.ModelAdmin):
-    # Append-only history — view only, no add/delete.
+    # Append-only history — view only: no add, change, or delete.
     list_display = ("attendee", "status", "actor", "actor_user", "created_at")
     list_filter = ("actor", "status")
-    readonly_fields = ("attendee", "status", "note", "actor", "actor_user", "created_at")
+    list_select_related = ("attendee__contact", "actor_user")
 
     def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):

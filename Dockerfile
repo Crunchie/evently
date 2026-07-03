@@ -24,8 +24,10 @@ RUN useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /srv /data
 USER appuser
 
+# Safe-by-default: the image never runs in debug mode unless explicitly overridden.
 ENV PATH="/srv/.venv/bin:$PATH" \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    DEBUG=0
 
 EXPOSE 8000
 # Apply migrations, then serve. No host ports are published (see docker-compose.yml).

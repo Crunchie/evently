@@ -16,5 +16,7 @@ __pycache__/
 staticfiles/
 # Not needed at runtime — keep the image lean.
 mockups/
+tests/
+ideas
 *.md
 Events App — Design Summary.md

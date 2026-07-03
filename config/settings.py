@@ -10,10 +10,17 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-change-me")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
-ALLOWED_HOSTS = [
-    h.strip()
-    for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-    if h.strip()
+
+if not DEBUG and SECRET_KEY == "dev-insecure-change-me":
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SECRET_KEY must be set when DEBUG=0")
+
+# localhost/127.0.0.1 are always allowed: the Docker healthcheck probes
+# http://localhost:8000/healthz and must not 400 in production.
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()] + [
+    "localhost",
+    "127.0.0.1",
 ]
 
 # SQLite DB + Litestream backups live here (bind-mounted to /data in Docker).
