@@ -233,6 +233,20 @@ class Invitation(TimestampedModel):
         # to retain. The link shows the soft "no longer available" page.
         REVOKED = "revoked", "Revoked"
 
+    # Monotonic ladder rank (§2.3): the envelope only moves forward. SENT and SHARED are
+    # equivalent progress ("it went out"); BOUNCED sits between going-out and OPENED so a
+    # bounce can't override an open, and a later open (another channel/household copy)
+    # clears a bounce. REVOKED is terminal and handled separately in advance_state().
+    STATE_RANK = {
+        State.PENDING: 0,
+        State.QUEUED: 1,
+        State.SENT: 2,
+        State.SHARED: 2,
+        State.BOUNCED: 3,
+        State.OPENED: 4,
+        State.RESPONDED: 5,
+    }
+
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="invitations")
     contact = models.ForeignKey(
         Contact, null=True, blank=True, on_delete=models.CASCADE, related_name="invitations"
@@ -285,6 +299,38 @@ class Invitation(TimestampedModel):
     @property
     def rsvp_path(self) -> str:
         return f"/i/{self.token}"
+
+    def save(self, *args, **kwargs):
+        creating = self._state.adding
+        super().save(*args, **kwargs)
+        if creating:
+            self.sync_attendees()
+
+    def sync_attendees(self) -> None:
+        """Ensure one attendee row per covered person (§5): the single contact, or every
+        household member. Idempotent — re-run after household membership changes. Never
+        removes rows (RSVP history is retained even if someone leaves the household)."""
+        people = [self.contact] if self.contact_id else list(self.household.members.all())
+        for person in people:
+            InvitationAttendee.objects.get_or_create(invitation=self, contact=person)
+
+    def advance_state(self, new_state: str) -> bool:
+        """Move the envelope along the monotonic state ladder (§2.3); True if it moved.
+
+        Rules: states only move forward (a link click after responding can't regress
+        RESPONDED → OPENED); with several deliveries the envelope reflects the *furthest*
+        progress, so a bounce only applies while nothing has been opened, and a later
+        open clears a bounce; REVOKED always applies and is terminal.
+        """
+        if self.state == self.State.REVOKED:
+            return False
+        if new_state != self.State.REVOKED and (
+            self.STATE_RANK[new_state] <= self.STATE_RANK[self.state]
+        ):
+            return False
+        self.state = new_state
+        self.save(update_fields=["state", "updated_at"])
+        return True
 
 
 class InvitationAttendee(TimestampedModel):

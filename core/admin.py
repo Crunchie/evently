@@ -35,9 +35,17 @@ class HouseholdMemberInline(admin.TabularInline):
 
 
 class InvitationAttendeeInline(admin.TabularInline):
+    # Rows are auto-created from the envelope's target (Invitation.sync_attendees) —
+    # here they're edited, never added (avoids duplicate-contact errors) and never
+    # deleted (history is retained; uninvite = revoke the invitation, §2.2).
     model = InvitationAttendee
     extra = 0
     fields = ("contact", "rsvp_status", "responded_at")
+    readonly_fields = ("contact",)
+    can_delete = False
+
+    def has_add_permission(self, request, obj):
+        return False
 
 
 # --- Contacts / households / channels --------------------------------------- #
@@ -103,6 +111,11 @@ class InvitationAdmin(admin.ModelAdmin):
     @admin.display(description="target")
     def target(self, obj):
         return obj.household or obj.contact
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        # Household membership may have changed since creation — top up missing rows.
+        form.instance.sync_attendees()
 
 
 @admin.register(InvitationAttendee)

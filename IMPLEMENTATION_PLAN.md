@@ -23,6 +23,8 @@ Django (keep is FastAPI) and Cloudflare Tunnel/Access (keep uses Tailscale).
   the tunnel reaches it (required for the Access-JWT trust model, §8).
 - **Email:** Resend (§6). **Assisted channels:** Messenger (Web Share API) + WhatsApp
   (`wa.me` deep links), no server integration (§6).
+- **CI:** GitHub Actions (`.github/workflows/ci.yml`) — `uv sync --frozen` → ruff check +
+  format → pytest, on every push to `main` and every PR.
 
 ### Everyday commands
 ```bash
@@ -219,7 +221,11 @@ v1 and build just the dashboard + RSVP page). **Guest RSVP page** at `/i/<token>
 CSS per the mockups; all states — fresh / already-responded / cancelled / revoked / past
 (§2.5); Going/Maybe/Can't, note, plus-ones, household per-member; add-to-calendar (`.ics`
 `VEVENT` + Google link); who's-coming toggle. Submits write `InvitationAttendee` +
-`RsvpEvent`; first hit sets `opened_at`.
+`RsvpEvent`; first hit sets `opened_at`. Model helpers already exist and must be used:
+**all state changes go through `Invitation.advance_state()`** (monotonic ladder — no
+regressions, bounce-before-open only, REVOKED terminal) and **attendee rows come from
+`Invitation.sync_attendees()`** (auto-runs on create; re-run after household membership
+changes; never auto-removes).
 - **Gate:** create event (admin) → open an invitation link → RSVP (single + household) →
   see counts update on a basic dashboard. No email involved yet. State machine tested.
 
@@ -253,11 +259,14 @@ override** (§2.3, `actor=organizer`), day-before reminder prompt (§2.4).
 
 ### Phase 7 — PWA + security pass + production deploy ⬜
 PWA manifest + service worker (§7). Security pass (§8): CSP, `Referrer-Policy: no-referrer`
-on the RSVP page, escape all guest-authored text, rate-limit RSVP + channel-request +
-login, don't log tokens. Stand up the Cloudflare Tunnel + Access on the Proxmox VM;
-Litestream backups to a private bucket; restore drill.
+on the RSVP page, escape all guest-authored text, don't log tokens. **Rate limiting is an
+edge config, not app code:** one Cloudflare WAF rate-limiting rule on `/i/*` (free plan
+includes one) covers RSVP + channel-change; Access already gates the organizer side.
+Stand up the Cloudflare Tunnel + Access on the Proxmox VM; Litestream backups to a
+private bucket; restore drill.
 - **Gate:** invite a **real** gathering end-to-end from the phone; confirm Access gates the
-  dashboard and your co-host gets in via one-time PIN; verify a Litestream restore.
+  dashboard and your co-host gets in via one-time PIN; confirm the rate-limit rule fires
+  (hammer `/i/junk` and see 429s); verify a Litestream restore.
 
 ### Phase 8 — Later / maybe (design-doc Phase 2) ⬜
 Automated channels as new spokes (Telegram, then SMS); recurring events

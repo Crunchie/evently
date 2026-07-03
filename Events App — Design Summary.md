@@ -159,6 +159,11 @@ upload/storage/resizing complexity for polish that can come later.
 
 **Invitation lifecycle:**
 `pending → queued → sent / shared → opened → responded`, plus `bounced` for failed email.
+The state is a **monotonic ladder — it only moves forward**: a link click after
+responding can't regress the envelope to merely "opened", and with several deliveries
+(household copies to both parents) the envelope shows the *furthest* progress — a bounce
+on one copy only applies while nothing has been opened, and a later open clears it.
+`revoked` (§2.2) always applies and is terminal.
 
 - *sent* = provider accepted the email; *shared* = share sheet / deep link invoked
   (assisted channels — optimistic, §6); *opened* = first click of the unique link
@@ -357,7 +362,10 @@ one-stepper RSVP UX and simplifies headcount. **(c)** guest channel-change reque
   person (the single contact, or each household member) carrying that person's
   `rsvp_status` (going / maybe / cant / no-reply). A single-contact invitation has
   exactly one row — same shape everywhere, no special cases. Headcount = Going attendees
-  (across this table) + `plus_ones` from envelopes with any Going attendee.
+  (across this table) + `plus_ones` from envelopes with any Going attendee. Rows are
+  **auto-created** from the envelope's target (idempotent `sync_attendees`, re-run when
+  household membership changes) and never auto-removed — history survives someone
+  leaving a household.
 - **deliveries** — each actual send over a channel (for retries / multi-channel — a
   household envelope may deliver to several member channels). An **audit record**, not a
   queue (§9 — sends are synchronous): records the actual address/number used and the
@@ -525,13 +533,17 @@ roughly by what actually matters here.
 3. **Capability-URL hygiene.** Tokens in URLs leak via `Referer` headers, server logs,
    browser history, and screenshots. Mitigate: `Referrer-Policy: no-referrer` on the
    RSVP page, never log full tokens, HTTPS only, high entropy so brute-forcing is
-   infeasible. Rate-limit the RSVP endpoint anyway.
+   infeasible. Rate limiting is done **at the edge, not in app code**: one Cloudflare
+   WAF rate-limiting rule on `/i/*` (the free plan includes one rule) throttles
+   token-guessing and abuse before it reaches the homelab. It covers the RSVP endpoint
+   and the channel-change endpoint in one rule; the organizer side needs none (Access
+   blocks unauthenticated traffic at the edge already).
 4. **Guest-initiated channel changes are organizer-approved.** The RSVP page can request
    a new preferred channel (§2.5) from a *bearer* link, so nothing takes effect
    automatically: requests queue as `proposed` and a human approves each one. That
    review is the security gate — sanity-check the address/number plausibly belongs to
-   that friend before approving (it catches typos too). Rate-limit the request endpoint
-   so a leaked link can't flood the queue.
+   that friend before approving (it catches typos too). A leaked link can't flood the
+   queue: the endpoint sits under `/i/*`, covered by the edge rate-limit rule (item 3).
 5. **PII / data protection.** You're storing friends' contact details. Collect the
    minimum, secure the DB (disk encryption if self-hosting; the Litestream backup
    target must be private). Single-tenant (§5), so all organizers legitimately share the
@@ -719,8 +731,8 @@ WhatsApp Business API, at per-message rates — if pursued.
       an organizer override; treat the first RSVP-link click as the real delivery signal.
 - [ ] Consider PWA packaging so Web Share is one tap from the phone home screen (§7).
 - [ ] Security pass before first real use: CSP + escape user text (XSS),
-      `Referrer-Policy` on the RSVP page, parameterized queries, CSRF, rate-limit
-      RSVP/login, secure the DB backup target (PII). See §8.
+      `Referrer-Policy` on the RSVP page, parameterized queries, CSRF, configure the
+      Cloudflare WAF rate-limit rule on `/i/*`, secure the DB backup target (PII). See §8.
 - [ ] Cloudflare Tunnel setup + reverse proxy in front of the app container (Path A);
       verify the app is unreachable except via the tunnel (required for the Access JWT
       auto-login, §8).
