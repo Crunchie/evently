@@ -1,0 +1,18 @@
+# Litestream — continuous SQLite backup (§9).
+#
+# The local file replica below is a STUB so the compose stack runs. It backs up onto the
+# same volume, which is NOT a real disaster-recovery backup. Before the first real event
+# (Phase 7), point `replicas` at off-box object storage (S3 / Backblaze B2) instead —
+# uncomment and fill the block below, and set the credentials in .env.
+dbs:
+  - path: /data/evently.db
+    replicas:
+      - type: file
+        path: /data/backups/evently
+
+      # - type: s3
+      #   bucket: evently-backups
+      #   path: evently
+      #   endpoint: ${LITESTREAM_ENDPOINT}      # e.g. Backblaze B2 S3 endpoint
+      #   access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+      #   secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}

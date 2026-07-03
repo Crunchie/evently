@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    # Run as the host user that owns ./data so the bind-mounted DB is read/writable.
+    user: "${PUID:-1001}:${PGID:-1001}"
+    # NB: no `ports:` — the app is NOT published to the host. The Cloudflare Tunnel
+    # (cloudflared, below) is the only ingress. This is required for the Access-JWT
+    # trust model (§8): the app must be unreachable except through the tunnel.
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env}
+      - DEBUG=0
+      - DATA_DIR=/data
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_REPLY_TO=${EMAIL_REPLY_TO:-}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-}
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    # In the Cloudflare Zero Trust dashboard, point the tunnel's public hostname
+    # (e.g. rsvp.<domain>) at http://app:8000 over this compose network.
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  litestream:
+    image: litestream/litestream:latest
+    command: replicate
+    volumes:
+      - ./data:/data
+      - ./litestream.yml:/etc/litestream.yml:ro
+    restart: unless-stopped

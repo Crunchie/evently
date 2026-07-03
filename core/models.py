@@ -14,6 +14,7 @@ into Django. Notes:
   the RSVP-page UX (one stepper per household/guest) and keeps the headcount simple.
 - Target DB is SQLite in WAL mode (§9); everything here is plain relational SQL.
 """
+
 import secrets
 import uuid
 
@@ -41,6 +42,7 @@ class TimestampedModel(models.Model):
 # --------------------------------------------------------------------------- #
 class Tag(models.Model):
     """A label for bulk guest-list operations ("family", "book club") — §2.2."""
+
     name = models.CharField(max_length=50, unique=True)
 
     def __str__(self):
@@ -49,14 +51,18 @@ class Tag(models.Model):
 
 class Household(TimestampedModel):
     """A family/group invited as one unit with one link (§2.2)."""
+
     name = models.CharField(max_length=120)  # e.g. "The Hendersons"
     # The known "main" person of the household (for fallback greetings/attribution).
     primary_contact = models.ForeignKey(
         "Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="+",
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
     )
 
     def __str__(self):
@@ -65,6 +71,7 @@ class Household(TimestampedModel):
 
 class Contact(TimestampedModel):
     """A person you might invite. Not a user account — most invitees never sign up."""
+
     name = models.CharField(max_length=120)
     nickname = models.CharField(max_length=60, blank=True)  # used in greetings if set
     household = models.ForeignKey(
@@ -75,8 +82,11 @@ class Contact(TimestampedModel):
     notes = models.TextField(blank=True)
     tags = models.ManyToManyField(Tag, blank=True, related_name="contacts")
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="+",
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
     )
 
     def __str__(self):
@@ -85,9 +95,7 @@ class Contact(TimestampedModel):
     @property
     def preferred_channel(self):
         """The active channel used by default when inviting this contact (§2.2)."""
-        return self.channels.filter(
-            is_preferred=True, status=ContactChannel.Status.ACTIVE
-        ).first()
+        return self.channels.filter(is_preferred=True, status=ContactChannel.Status.ACTIVE).first()
 
 
 class ContactChannel(TimestampedModel):
@@ -96,6 +104,7 @@ class ContactChannel(TimestampedModel):
     status=PROPOSED + source=GUEST; the organizer's approval flips it to ACTIVE + preferred.
     The dashboard approval queue is `ContactChannel.objects.filter(status=PROPOSED)`.
     """
+
     class Kind(models.TextChoices):
         EMAIL = "email", "Email"
         WHATSAPP = "whatsapp", "WhatsApp"
@@ -122,7 +131,10 @@ class ContactChannel(TimestampedModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     # Which invitation the guest was looking at when they requested this (audit/context).
     requested_via = models.ForeignKey(
-        "Invitation", null=True, blank=True, on_delete=models.SET_NULL,
+        "Invitation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="channel_requests",
     )
 
@@ -130,7 +142,8 @@ class ContactChannel(TimestampedModel):
         constraints = [
             # At most one preferred channel per contact (partial unique — SQLite supports it).
             models.UniqueConstraint(
-                fields=["contact"], condition=Q(is_preferred=True),
+                fields=["contact"],
+                condition=Q(is_preferred=True),
                 name="one_preferred_channel_per_contact",
             ),
         ]
@@ -165,8 +178,11 @@ class Event(TimestampedModel):
     # Stable UID for the outbound add-to-calendar .ics, so re-adding dedupes (§5).
     ics_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="events",
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="events",
     )
 
     class Meta:
@@ -192,7 +208,8 @@ class Event(TimestampedModel):
         plus = (
             self.invitations.filter(attendees__rsvp_status=InvitationAttendee.Rsvp.GOING)
             .distinct()
-            .aggregate(total=Sum("plus_ones"))["total"] or 0
+            .aggregate(total=Sum("plus_ones"))["total"]
+            or 0
         )
         return going + plus
 
@@ -202,12 +219,13 @@ class Event(TimestampedModel):
 # --------------------------------------------------------------------------- #
 class Invitation(TimestampedModel):
     """The envelope: one token/link, targets exactly one contact OR one household."""
+
     class State(models.TextChoices):
-        PENDING = "pending", "Pending"       # created, not sent
-        QUEUED = "queued", "Queued"          # picked up by the delivery worker
-        SENT = "sent", "Sent"                # automated: provider accepted
-        SHARED = "shared", "Shared"          # assisted: share/deep-link invoked (optimistic)
-        OPENED = "opened", "Opened"          # first link click — the real delivery signal
+        PENDING = "pending", "Pending"  # created, not sent
+        QUEUED = "queued", "Queued"  # picked up by the delivery worker
+        SENT = "sent", "Sent"  # automated: provider accepted
+        SHARED = "shared", "Shared"  # assisted: share/deep-link invoked (optimistic)
+        OPENED = "opened", "Opened"  # first link click — the real delivery signal
         RESPONDED = "responded", "Responded"
         BOUNCED = "bounced", "Bounced"
 
@@ -229,8 +247,8 @@ class Invitation(TimestampedModel):
     state = models.CharField(max_length=20, choices=State.choices, default=State.PENDING)
     opened_at = models.DateTimeField(null=True, blank=True)  # first link click
 
-    plus_ones = models.PositiveSmallIntegerField(default=0)   # envelope-level (§5 refinement)
-    latest_note = models.TextField(blank=True)                # denormalized most-recent note
+    plus_ones = models.PositiveSmallIntegerField(default=0)  # envelope-level (§5 refinement)
+    latest_note = models.TextField(blank=True)  # denormalized most-recent note
     latest_note_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -238,18 +256,20 @@ class Invitation(TimestampedModel):
             # Exactly one target: a contact XOR a household.
             models.CheckConstraint(
                 name="invitation_contact_xor_household",
-                check=(
+                condition=(
                     Q(contact__isnull=False, household__isnull=True)
                     | Q(contact__isnull=True, household__isnull=False)
                 ),
             ),
             # No double-inviting the same contact/household to the same event.
             models.UniqueConstraint(
-                fields=["event", "contact"], condition=Q(contact__isnull=False),
+                fields=["event", "contact"],
+                condition=Q(contact__isnull=False),
                 name="one_invitation_per_event_contact",
             ),
             models.UniqueConstraint(
-                fields=["event", "household"], condition=Q(household__isnull=False),
+                fields=["event", "household"],
+                condition=Q(household__isnull=False),
                 name="one_invitation_per_event_household",
             ),
         ]
@@ -265,6 +285,7 @@ class Invitation(TimestampedModel):
 
 class InvitationAttendee(TimestampedModel):
     """One counted person inside an envelope (the single contact, or each household member)."""
+
     class Rsvp(models.TextChoices):
         NO_REPLY = "no_reply", "No reply"
         GOING = "going", "Going"
@@ -295,9 +316,10 @@ class Delivery(TimestampedModel):
     One send attempt over one channel. Doubles as the outbound queue: the cron management
     command (§9) processes rows in status=QUEUED. A household envelope may spawn several.
     """
+
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
-        SENT = "sent", "Sent"        # automated: provider accepted
+        SENT = "sent", "Sent"  # automated: provider accepted
         SHARED = "shared", "Shared"  # assisted: share sheet / deep link invoked (optimistic)
         BOUNCED = "bounced", "Bounced"
         FAILED = "failed", "Failed"
@@ -322,11 +344,14 @@ class Delivery(TimestampedModel):
 
 class RsvpEvent(models.Model):
     """Append-only history of RSVP changes (§5). Current status is denormalized onto attendee."""
+
     class Actor(models.TextChoices):
         GUEST = "guest", "Guest"
         ORGANIZER = "organizer", "Organizer"
 
-    attendee = models.ForeignKey(InvitationAttendee, on_delete=models.CASCADE, related_name="history")
+    attendee = models.ForeignKey(
+        InvitationAttendee, on_delete=models.CASCADE, related_name="history"
+    )
     status = models.CharField(max_length=10, choices=InvitationAttendee.Rsvp.choices)
     note = models.TextField(blank=True)  # note as it stood at this change, if any
     actor = models.CharField(max_length=20, choices=Actor.choices)

@@ -1,0 +1,20 @@
+# Never copy the host virtualenv into the image (the container builds its own via uv).
+.venv/
+# Runtime data + backups (bind-mounted at /data).
+data/
+# VCS, caches, local settings.
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.claude/
+.env
+.env.*
+# Collected static is regenerated in the image.
+staticfiles/
+# Not needed at runtime — keep the image lean.
+mockups/
+*.md
+Events App — Design Summary.md

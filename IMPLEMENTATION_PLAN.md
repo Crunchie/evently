@@ -183,13 +183,15 @@ services:
 
 ## Implementation phases (with gates)
 
-### Phase 0 — Scaffolding & tooling ⬜
-`uv init` style setup: `pyproject.toml` (above), `uv sync`; `django-admin startproject
-config .`; `python manage.py startapp core`; split settings to read env; add WhiteNoise;
-`.env.example`, `.gitignore` (`.venv/ data/ *.db* .env __pycache__/`), Dockerfile,
-docker-compose, `litestream.yml`; a `/healthz` view; ruff config; `git init`.
-- **Gate:** `uv run python manage.py runserver` serves `/healthz`; `uv run pytest` green
-  (healthz test); `docker compose build` succeeds; ruff clean.
+### Phase 0 — Scaffolding & tooling ✅
+`pyproject.toml` + `uv sync`; `config` project + `core` app; env-driven settings;
+WhiteNoise; `.env.example`, `.gitignore`, `.dockerignore`, Dockerfile, docker-compose
+(app+cloudflared+litestream), `litestream.yml`; `/healthz` view; ruff config.
+- **Gate — all passing:** `runserver` serves `/healthz` → `{"status":"ok"}`; `uv run
+  pytest` green; `docker compose build` succeeds (518 MB image); ruff check + format clean.
+- Note: the initial `core` migration (`0001_initial`) was generated here so the stack is
+  fully runnable, and SQLite **WAL is confirmed active**. That covers Phase 1's
+  makemigrations — Phase 1 now just adds the admin registration + constraint tests.
 
 ### Phase 1 — Data model + admin backoffice ⬜
 Finalise `core/models.py` (✅ drafted); `makemigrations` + `migrate`; enable WAL; register
