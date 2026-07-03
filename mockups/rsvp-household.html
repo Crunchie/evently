@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're invited — Summer BBQ & Garden Party</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --coral:#f15c3d; --coral-dark:#d94727;
+    --ink:#1d1d1f; --muted:#6b7280; --line:#ececef;
+    --card:#ffffff; --bg:#f4f2f0;
+    --radius:20px; --shadow:0 12px 34px rgba(30,20,10,.08);
+    --shadow-sm:0 4px 14px rgba(30,20,10,.06);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Inter",system-ui,sans-serif;color:var(--ink);
+       background:var(--bg);-webkit-font-smoothing:antialiased;}
+  a{color:var(--coral);text-decoration:none;}
+  h1,h2,h3{margin:0;letter-spacing:-.02em;}
+
+  /* HERO */
+  .hero{position:relative;padding:1.4rem clamp(1.2rem,4vw,2.5rem) 8rem;color:#fff;overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 15% 10%, #ffcf94 0%, rgba(255,207,148,0) 45%),
+      radial-gradient(120% 110% at 88% 15%, #f26aa0 0%, rgba(242,106,160,0) 50%),
+      radial-gradient(130% 120% at 75% 100%, #6f4a9e 0%, rgba(111,74,158,0) 60%),
+      linear-gradient(135deg,#f6a057 0%,#ef5f86 45%,#7a4fa2 100%);}
+  .brand{font-weight:800;font-size:1.15rem;letter-spacing:-.02em;opacity:.95;}
+  .hero-body{max-width:1080px;margin:0 auto;}
+  .topline{display:flex;justify-content:space-between;align-items:center;max-width:1080px;margin:0 auto 3.2rem;}
+  .greet{font-size:.85rem;font-weight:600;background:rgba(255,255,255,.2);backdrop-filter:blur(8px);padding:.4rem .8rem;border-radius:999px;}
+  .chips{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;}
+  .chip{display:inline-flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:700;letter-spacing:.02em;
+        background:rgba(255,255,255,.18);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.25);
+        padding:.4rem .8rem .4rem .45rem;border-radius:999px;}
+  .chip.date{padding-left:.8rem;text-transform:uppercase;}
+  .chip .av{width:1.5rem;height:1.5rem;border-radius:50%;background:#fff;color:var(--coral);display:grid;place-items:center;font-weight:800;font-size:.75rem;}
+  .hero h1{font-size:clamp(2.4rem,6vw,3.8rem);font-weight:900;line-height:1.02;max-width:14ch;text-shadow:0 2px 30px rgba(80,30,60,.25);}
+
+  /* LAYOUT */
+  .wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.2rem,4vw,2.5rem);}
+  .layout{display:grid;grid-template-columns:1fr;gap:1.1rem;grid-template-areas:"rsvp" "details";margin-top:-6.4rem;position:relative;}
+  @media(min-width:900px){
+    .layout{grid-template-columns:1fr 380px;grid-template-areas:"details rsvp";gap:1.4rem;align-items:start;}
+    .details{margin-top:2rem;}
+  }
+
+  /* DETAILS */
+  .details{grid-area:details;display:flex;flex-direction:column;gap:1.4rem;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  @media(max-width:520px){.row2{grid-template-columns:1fr;}}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:1.15rem 1.25rem;}
+  .card .lab{font-size:.68rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:.45rem;}
+  .card .big{font-size:1.15rem;font-weight:700;}
+  .card .sub{color:var(--muted);font-size:.92rem;margin-top:.15rem;}
+  .sec-title{font-size:1.15rem;font-weight:800;margin:.4rem 0 -.4rem;}
+  .about{line-height:1.6;color:#3a3a3d;white-space:pre-line;}
+  .map{padding:0;overflow:hidden;position:relative;height:210px;background:linear-gradient(180deg,#eef1ec,#e7ebe6);}
+  .map svg{position:absolute;inset:0;width:100%;height:100%;}
+  .map .pin{position:absolute;top:50%;left:50%;width:20px;height:20px;transform:translate(-50%,-50%);background:var(--coral);border:3px solid #fff;border-radius:50%;box-shadow:0 4px 10px rgba(0,0,0,.25);}
+  .map .loc{position:absolute;bottom:14px;left:14px;background:#fff;border-radius:12px;padding:.45rem .75rem;font-size:.82rem;font-weight:600;box-shadow:var(--shadow-sm);}
+
+  /* RSVP CARD */
+  .rsvp{grid-area:rsvp;background:rgba(255,255,255,.85);backdrop-filter:blur(20px) saturate(1.3);
+        border:1px solid rgba(255,255,255,.6);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.35rem;}
+  @media(min-width:900px){.rsvp{position:sticky;top:1.5rem;}}
+  .rsvp-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.3rem;}
+  .rsvp-head h2{font-size:1.15rem;font-weight:800;}
+  .rsvp-head .allgoing{font-family:inherit;font-size:.78rem;font-weight:700;color:var(--coral);background:none;border:none;cursor:pointer;padding:0;}
+  .rsvp-sub{font-size:.82rem;color:var(--muted);margin-bottom:1rem;}
+
+  /* Per-member */
+  .member{padding:.85rem 0;border-top:1px solid var(--line);}
+  .member:first-of-type{border-top:none;}
+  .mtop{display:flex;align-items:center;gap:.6rem;margin-bottom:.55rem;}
+  .mtop .av{width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:.82rem;flex:none;}
+  .mtop .mn{font-weight:700;font-size:.95rem;}
+  .mtop .kid{color:var(--muted);font-weight:500;font-size:.8rem;}
+  .mtop .tag{margin-left:auto;font-size:.64rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+             color:var(--muted);background:#f3f2f0;border-radius:999px;padding:.12rem .5rem;}
+  .seg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;}
+  .seg button{padding:.5rem .3rem;border-radius:11px;border:1.5px solid var(--line);background:#fff;color:var(--muted);
+              font-family:inherit;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .1s;}
+  .seg button:hover{border-color:#d5d5da;}
+  .seg button[aria-pressed="true"][data-s="going"]{background:var(--coral);border-color:transparent;color:#fff;}
+  .seg button[aria-pressed="true"][data-s="maybe"]{background:#e0912f;border-color:transparent;color:#fff;}
+  .seg button[aria-pressed="true"][data-s="cant"]{background:#4b5563;border-color:transparent;color:#fff;}
+
+  .summary{margin-top:1rem;padding:.7rem .9rem;border-radius:12px;background:#faf7f4;font-size:.85rem;text-align:center;color:var(--muted);}
+  .summary strong{color:var(--ink);}
+
+  .field-lab{font-size:.82rem;font-weight:600;color:var(--muted);margin:1rem 0 .4rem;display:block;}
+  .stepper{display:inline-flex;align-items:center;gap:.4rem;}
+  .stepper button{width:2.1rem;height:2.1rem;border-radius:10px;border:1.5px solid var(--line);background:#fff;font-size:1.1rem;cursor:pointer;color:var(--ink);line-height:1;}
+  .stepper output{min-width:1.4rem;text-align:center;font-weight:700;font-size:1.1rem;}
+  textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:.6rem .7rem;font-family:inherit;font-size:.92rem;resize:vertical;margin-top:.2rem;}
+  textarea:focus{outline:none;border-color:var(--coral);}
+  .btn-save{width:100%;margin-top:.9rem;padding:.8rem;border-radius:14px;border:none;background:var(--coral);color:#fff;font-family:inherit;font-weight:700;font-size:.95rem;cursor:pointer;}
+  .btn-save:hover{background:var(--coral-dark);}
+  .btn-cal{width:100%;margin-top:.7rem;padding:.8rem;border-radius:14px;border:1.5px solid var(--line);background:#fff;font-family:inherit;font-weight:700;font-size:.92rem;cursor:pointer;color:var(--ink);}
+  .btn-cal:hover{border-color:#d5d5da;}
+  .saved{display:none;text-align:center;color:#15803d;font-weight:700;font-size:.88rem;margin-top:.7rem;}
+  .saved.show{display:block;}
+  .change{display:block;text-align:center;font-size:.82rem;color:var(--muted);margin-top:1.1rem;}
+  .change a{color:var(--muted);text-decoration:underline;}
+  .footnote{text-align:center;color:var(--muted);font-size:.8rem;padding:2.5rem 1rem 3rem;}
+</style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="topline">
+      <span class="brand">gathr</span>
+      <span class="greet">Hi Hendersons 👋</span>
+    </div>
+    <div class="hero-body">
+      <div class="chips">
+        <span class="chip"><span class="av">S</span> Hosted by Sam &amp; Kate</span>
+        <span class="chip date">Sat 12 Jul · 1 PM</span>
+      </div>
+      <h1>Summer BBQ &amp; Garden Party</h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="layout">
+
+      <div class="details">
+        <div class="row2">
+          <div class="card"><div class="lab">When</div><div class="big">Sat, Jul 12</div><div class="sub">1:00 PM – late</div></div>
+          <div class="card"><div class="lab">Where</div><div class="big">42 Maple Avenue</div><div class="sub">Come through the side gate</div></div>
+        </div>
+        <div>
+          <h2 class="sec-title">About</h2>
+          <div class="card about" style="margin-top:.9rem;">Firing up the grill for the afternoon — burgers, drinks, and a very competitive game of rounders.
+
+Bring the family and something for the pud table if you fancy. Kids and dogs welcome!</div>
+        </div>
+        <div>
+          <h2 class="sec-title">Getting there</h2>
+          <div class="card map" style="margin-top:.9rem;">
+            <svg viewBox="0 0 400 210" preserveAspectRatio="none">
+              <g stroke="#d9ded6" stroke-width="1">
+                <line x1="0" y1="52" x2="400" y2="52"/><line x1="0" y1="105" x2="400" y2="105"/>
+                <line x1="0" y1="158" x2="400" y2="158"/><line x1="100" y1="0" x2="100" y2="210"/>
+                <line x1="200" y1="0" x2="200" y2="210"/><line x1="300" y1="0" x2="300" y2="210"/>
+              </g>
+              <line x1="40" y1="180" x2="360" y2="60" stroke="#f6b9ab" stroke-width="7" stroke-linecap="round"/>
+              <line x1="120" y1="10" x2="280" y2="200" stroke="#cfd4cb" stroke-width="6" stroke-linecap="round"/>
+            </svg>
+            <a class="pin" href="https://maps.google.com/?q=42+Maple+Avenue" target="_blank" rel="noopener" aria-label="Open map"></a>
+            <span class="loc">The garden · 42 Maple Avenue</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- HOUSEHOLD RSVP CARD -->
+      <aside class="rsvp">
+        <div class="rsvp-head">
+          <h2>Who's coming?</h2>
+          <button class="allgoing" id="allGoing">Everyone's coming</button>
+        </div>
+        <p class="rsvp-sub">Set an answer for each person — update any time from this link.</p>
+
+        <div id="members">
+          <div class="member">
+            <div class="mtop"><span class="av" style="background:#f15c3d">J</span><span class="mn">Jane</span><span class="tag">Main contact</span></div>
+            <div class="seg" role="group" aria-label="Jane"><button data-s="going" aria-pressed="false">Going</button><button data-s="maybe" aria-pressed="false">Maybe</button><button data-s="cant" aria-pressed="false">Can't</button></div>
+          </div>
+          <div class="member">
+            <div class="mtop"><span class="av" style="background:#6d5bd0">M</span><span class="mn">Mark</span></div>
+            <div class="seg" role="group" aria-label="Mark"><button data-s="going" aria-pressed="false">Going</button><button data-s="maybe" aria-pressed="false">Maybe</button><button data-s="cant" aria-pressed="false">Can't</button></div>
+          </div>
+          <div class="member">
+            <div class="mtop"><span class="av" style="background:#12a594">O</span><span class="mn">Ollie</span><span class="kid">age 12</span></div>
+            <div class="seg" role="group" aria-label="Ollie"><button data-s="going" aria-pressed="false">Going</button><button data-s="maybe" aria-pressed="false">Maybe</button><button data-s="cant" aria-pressed="false">Can't</button></div>
+          </div>
+          <div class="member">
+            <div class="mtop"><span class="av" style="background:#e0912f">M</span><span class="mn">Mia</span><span class="kid">age 8</span></div>
+            <div class="seg" role="group" aria-label="Mia"><button data-s="going" aria-pressed="false">Going</button><button data-s="maybe" aria-pressed="false">Maybe</button><button data-s="cant" aria-pressed="false">Can't</button></div>
+          </div>
+        </div>
+
+        <div class="summary" id="summary">No answers yet — tap a button for each person.</div>
+
+        <span class="field-lab">Bringing anyone else? (plus-ones)</span>
+        <div class="stepper">
+          <button type="button" id="minus">−</button><output id="plusones">0</output><button type="button" id="plus">+</button>
+        </div>
+
+        <span class="field-lab">A note for the hosts <span style="font-weight:400;">(optional)</span></span>
+        <textarea rows="2" placeholder="e.g. Mark's arriving later / bringing a pavlova"></textarea>
+
+        <button class="btn-save" id="save">Save our RSVP</button>
+        <p class="saved" id="saved">✓ Saved — thanks! Any of you can change this from this link.</p>
+        <button class="btn-cal" onclick="mock('Add to calendar — download .ics or add to Google Calendar')">+ Add to calendar</button>
+
+        <span class="change">Prefer a different way to hear about invites?
+          <a href="#" onclick="mock('Pick Messenger / WhatsApp / email — sent to the host to approve (§2.5)');return false;">Change it</a></span>
+      </aside>
+
+    </div>
+  </div>
+
+  <p class="footnote">This invite is for your household — please don't share the link.</p>
+
+<script>
+  function mock(m){alert('Mockup:\n\n'+m);}
+  const members=[...document.querySelectorAll('.member')];
+  members.forEach(m=>m.querySelectorAll('.seg button').forEach(btn=>btn.addEventListener('click',()=>{
+    m.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed','false'));
+    btn.setAttribute('aria-pressed','true');updateSummary();
+  })));
+  function statusOf(m){const on=m.querySelector('.seg button[aria-pressed="true"]');return on?on.dataset.s:null;}
+  function updateSummary(){
+    const s=members.map(statusOf),g=s.filter(x=>x==='going').length,mb=s.filter(x=>x==='maybe').length,
+          c=s.filter(x=>x==='cant').length,ans=s.filter(Boolean).length,el=document.getElementById('summary');
+    if(!ans){el.innerHTML='No answers yet — tap a button for each person.';return;}
+    const p=[];if(g)p.push(`<strong>${g} going</strong>`);if(mb)p.push(`${mb} maybe`);if(c)p.push(`${c} can't`);
+    let t=p.join(' · ');if(ans<members.length)t+=` · ${members.length-ans} to answer`;el.innerHTML=t;
+  }
+  document.getElementById('allGoing').onclick=()=>{
+    members.forEach(m=>m.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s==='going'?'true':'false')));
+    updateSummary();
+  };
+  let n=0;const out=document.getElementById('plusones');
+  document.getElementById('plus').onclick=()=>{n=Math.min(n+1,9);out.textContent=n;};
+  document.getElementById('minus').onclick=()=>{n=Math.max(n-1,0);out.textContent=n;};
+  document.getElementById('save').onclick=()=>document.getElementById('saved').classList.add('show');
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# uv / virtualenv
+.venv/
+
+# Django
+*.log
+/staticfiles/
+
+# Data — SQLite DB, WAL, Litestream backups (bind-mounted at runtime)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets / env (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# Claude Code local (personal) settings
+.claude/settings.local.json
+
+# OS
+.DS_Store

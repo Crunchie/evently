@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're invited — Summer BBQ & Garden Party</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --coral:#f15c3d; --coral-dark:#d94727;
+    --ink:#1d1d1f; --muted:#6b7280; --line:#ececef;
+    --card:#ffffff; --bg:#f4f2f0;
+    --radius:20px; --shadow:0 12px 34px rgba(30,20,10,.08);
+    --shadow-sm:0 4px 14px rgba(30,20,10,.06);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Inter",system-ui,sans-serif;color:var(--ink);
+       background:var(--bg);-webkit-font-smoothing:antialiased;}
+  a{color:var(--coral);text-decoration:none;}
+  h1,h2,h3{margin:0;letter-spacing:-.02em;}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;padding:1.4rem clamp(1.2rem,4vw,2.5rem) 8rem;color:#fff;overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 15% 10%, #ffcf94 0%, rgba(255,207,148,0) 45%),
+      radial-gradient(120% 110% at 88% 15%, #f26aa0 0%, rgba(242,106,160,0) 50%),
+      radial-gradient(130% 120% at 75% 100%, #6f4a9e 0%, rgba(111,74,158,0) 60%),
+      linear-gradient(135deg,#f6a057 0%,#ef5f86 45%,#7a4fa2 100%);
+  }
+  .brand{font-weight:800;font-size:1.15rem;letter-spacing:-.02em;opacity:.95;}
+  .hero-body{max-width:1080px;margin:0 auto;}
+  .topline{display:flex;justify-content:space-between;align-items:center;max-width:1080px;margin:0 auto 3.2rem;}
+  .greet{font-size:.85rem;font-weight:600;background:rgba(255,255,255,.2);
+         backdrop-filter:blur(8px);padding:.4rem .8rem;border-radius:999px;}
+  .chips{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;}
+  .chip{display:inline-flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:700;
+        letter-spacing:.02em;background:rgba(255,255,255,.18);backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,.25);padding:.4rem .8rem .4rem .45rem;border-radius:999px;}
+  .chip.date{padding-left:.8rem;text-transform:uppercase;}
+  .chip .av{width:1.5rem;height:1.5rem;border-radius:50%;background:#fff;color:var(--coral);
+            display:grid;place-items:center;font-weight:800;font-size:.75rem;}
+  .hero h1{font-size:clamp(2.4rem,6vw,3.8rem);font-weight:900;line-height:1.02;max-width:14ch;
+           text-shadow:0 2px 30px rgba(80,30,60,.25);}
+
+  /* ---------- LAYOUT ---------- */
+  .wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.2rem,4vw,2.5rem);}
+  .layout{display:grid;grid-template-columns:1fr;gap:1.1rem;
+          grid-template-areas:"rsvp" "details";margin-top:-6.4rem;position:relative;}
+  @media(min-width:900px){
+    .layout{grid-template-columns:1fr 360px;grid-template-areas:"details rsvp";
+            gap:1.4rem;align-items:start;}
+    .details{margin-top:2rem;}
+  }
+
+  /* ---------- DETAIL CARDS ---------- */
+  .details{grid-area:details;display:flex;flex-direction:column;gap:1.4rem;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  @media(max-width:520px){.row2{grid-template-columns:1fr;}}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:1.15rem 1.25rem;}
+  .card .lab{font-size:.68rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:.45rem;}
+  .card .big{font-size:1.15rem;font-weight:700;}
+  .card .sub{color:var(--muted);font-size:.92rem;margin-top:.15rem;}
+  .sec-title{font-size:1.15rem;font-weight:800;margin:.4rem 0 -.4rem;}
+  .about{line-height:1.6;color:#3a3a3d;white-space:pre-line;}
+
+  /* stylised map */
+  .map{padding:0;overflow:hidden;position:relative;height:210px;
+       background:linear-gradient(180deg,#eef1ec,#e7ebe6);}
+  .map svg{position:absolute;inset:0;width:100%;height:100%;}
+  .map .pin{position:absolute;top:50%;left:50%;width:20px;height:20px;transform:translate(-50%,-50%);
+            background:var(--coral);border:3px solid #fff;border-radius:50%;box-shadow:0 4px 10px rgba(0,0,0,.25);}
+  .map .loc{position:absolute;bottom:14px;left:14px;background:#fff;border-radius:12px;
+            padding:.45rem .75rem;font-size:.82rem;font-weight:600;box-shadow:var(--shadow-sm);}
+
+  /* ---------- RSVP CARD ---------- */
+  .rsvp{grid-area:rsvp;background:rgba(255,255,255,.82);backdrop-filter:blur(20px) saturate(1.3);
+        border:1px solid rgba(255,255,255,.6);border-radius:var(--radius);box-shadow:var(--shadow);
+        padding:1.35rem;}
+  @media(min-width:900px){.rsvp{position:sticky;top:1.5rem;}}
+  .rsvp-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1rem;}
+  .rsvp-head h2{font-size:1.15rem;font-weight:800;}
+  .status-lab{font-size:.82rem;font-weight:700;color:var(--coral);opacity:0;transition:opacity .2s;}
+  .status-lab.show{opacity:1;}
+  .rsvp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;}
+  .rbtn{display:flex;align-items:center;justify-content:center;gap:.3rem;padding:.8rem .3rem;
+        border-radius:14px;border:1.5px solid var(--line);background:#fff;color:var(--ink);
+        font-family:inherit;font-weight:700;font-size:.92rem;cursor:pointer;transition:all .12s;}
+  .rbtn:hover{border-color:#d5d5da;transform:translateY(-1px);}
+  .rbtn[aria-pressed="true"]{color:#fff;border-color:transparent;}
+  .rbtn.going[aria-pressed="true"]{background:var(--coral);}
+  .rbtn.maybe[aria-pressed="true"]{background:#e0912f;}
+  .rbtn.cant[aria-pressed="true"]{background:#4b5563;}
+
+  #followup{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+  #followup.show{max-height:400px;}
+  .fu-inner{padding-top:1rem;}
+  .field-lab{font-size:.82rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;display:block;}
+  .stepper{display:inline-flex;align-items:center;gap:.4rem;}
+  .stepper button{width:2.1rem;height:2.1rem;border-radius:10px;border:1.5px solid var(--line);
+                  background:#fff;font-size:1.1rem;cursor:pointer;color:var(--ink);line-height:1;}
+  .stepper output{min-width:1.4rem;text-align:center;font-weight:700;font-size:1.1rem;}
+  textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:.6rem .7rem;
+           font-family:inherit;font-size:.92rem;resize:vertical;margin-top:.2rem;}
+  textarea:focus{outline:none;border-color:var(--coral);}
+
+  .btn-cal{width:100%;margin-top:1rem;padding:.8rem;border-radius:14px;border:1.5px solid var(--line);
+           background:#fff;font-family:inherit;font-weight:700;font-size:.92rem;cursor:pointer;color:var(--ink);}
+  .btn-cal:hover{border-color:#d5d5da;}
+  .btn-save{width:100%;margin-top:.9rem;padding:.8rem;border-radius:14px;border:none;
+            background:var(--coral);color:#fff;font-family:inherit;font-weight:700;font-size:.95rem;cursor:pointer;}
+  .btn-save:hover{background:var(--coral-dark);}
+  .saved{display:none;text-align:center;color:#15803d;font-weight:700;font-size:.88rem;margin-top:.7rem;}
+  .saved.show{display:block;}
+
+  .divider{height:1px;background:var(--line);margin:1.2rem 0;}
+  .coming-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.8rem;}
+  .coming-head h3{font-size:.95rem;font-weight:800;}
+  .coming-head .cnt{font-size:.82rem;color:var(--muted);}
+  .guest{display:flex;align-items:center;gap:.7rem;padding:.35rem 0;}
+  .guest .av{width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;
+             color:#fff;font-weight:700;font-size:.82rem;flex:none;}
+  .guest .gn{font-weight:600;font-size:.92rem;flex:1;}
+  .guest .gs{font-size:.8rem;color:var(--muted);}
+  .seeall{display:block;text-align:center;font-weight:700;font-size:.88rem;margin-top:.8rem;}
+  .change{display:block;text-align:center;font-size:.82rem;color:var(--muted);margin-top:1.1rem;}
+  .change a{color:var(--muted);text-decoration:underline;}
+
+  .footnote{text-align:center;color:var(--muted);font-size:.8rem;padding:2.5rem 1rem 3rem;}
+</style>
+</head>
+<body>
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="topline">
+      <span class="brand">gathr</span>
+      <span class="greet">Hi Alex 👋</span>
+    </div>
+    <div class="hero-body">
+      <div class="chips">
+        <span class="chip"><span class="av">S</span> Hosted by Sam &amp; Kate</span>
+        <span class="chip date">Sat 12 Jul · 1 PM</span>
+      </div>
+      <h1>Summer BBQ &amp; Garden Party</h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="layout">
+
+      <!-- DETAILS -->
+      <div class="details">
+        <div class="row2">
+          <div class="card">
+            <div class="lab">When</div>
+            <div class="big">Sat, Jul 12</div>
+            <div class="sub">1:00 PM – late</div>
+          </div>
+          <div class="card">
+            <div class="lab">Where</div>
+            <div class="big">42 Maple Avenue</div>
+            <div class="sub">Come through the side gate</div>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="sec-title">About</h2>
+          <div class="card about" style="margin-top:.9rem;">Firing up the grill for the afternoon — burgers, drinks, and a very competitive game of rounders.
+
+Bring the family and something for the pud table if you fancy. Kids and dogs welcome!</div>
+        </div>
+
+        <div>
+          <h2 class="sec-title">Getting there</h2>
+          <div class="card map" style="margin-top:.9rem;">
+            <svg viewBox="0 0 400 210" preserveAspectRatio="none">
+              <g stroke="#d9ded6" stroke-width="1">
+                <line x1="0" y1="52" x2="400" y2="52"/><line x1="0" y1="105" x2="400" y2="105"/>
+                <line x1="0" y1="158" x2="400" y2="158"/><line x1="100" y1="0" x2="100" y2="210"/>
+                <line x1="200" y1="0" x2="200" y2="210"/><line x1="300" y1="0" x2="300" y2="210"/>
+              </g>
+              <line x1="40" y1="180" x2="360" y2="60" stroke="#f6b9ab" stroke-width="7" stroke-linecap="round"/>
+              <line x1="120" y1="10" x2="280" y2="200" stroke="#cfd4cb" stroke-width="6" stroke-linecap="round"/>
+            </svg>
+            <a class="pin" href="https://maps.google.com/?q=42+Maple+Avenue" target="_blank" rel="noopener" aria-label="Open map"></a>
+            <span class="loc">The garden · 42 Maple Avenue</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RSVP CARD -->
+      <aside class="rsvp">
+        <div class="rsvp-head">
+          <h2>Will you be there?</h2>
+          <span class="status-lab" id="statusLab"></span>
+        </div>
+        <div class="rsvp-grid" role="group" aria-label="RSVP">
+          <button class="rbtn going" data-choice="going" data-label="You're going" aria-pressed="false">✓ Going</button>
+          <button class="rbtn maybe" data-choice="maybe" data-label="Maybe" aria-pressed="false">~ Maybe</button>
+          <button class="rbtn cant"  data-choice="cant"  data-label="Can't make it" aria-pressed="false">✕ Can't</button>
+        </div>
+
+        <div id="followup">
+          <div class="fu-inner">
+            <span class="field-lab">Bringing anyone? (plus-ones)</span>
+            <div class="stepper">
+              <button type="button" id="minus">−</button>
+              <output id="plusones">0</output>
+              <button type="button" id="plus">+</button>
+            </div>
+            <span class="field-lab" style="margin-top:1rem;">A note for the hosts <span style="font-weight:400;">(optional)</span></span>
+            <textarea rows="2" placeholder="e.g. we'll be a little late / bringing a pavlova"></textarea>
+            <button class="btn-save" id="save">Save my RSVP</button>
+            <p class="saved" id="saved">✓ Saved — thanks! Change it any time from this link.</p>
+          </div>
+        </div>
+
+        <button class="btn-cal" onclick="mock('Add to calendar — download .ics or add to Google Calendar')">+ Add to calendar</button>
+
+        <div class="divider"></div>
+
+        <div class="coming-head">
+          <h3>Who's coming</h3>
+          <span class="cnt">13 going · 2 maybe</span>
+        </div>
+        <div class="guest"><span class="av" style="background:#f15c3d">P</span><span class="gn">Priya</span><span class="gs">Going</span></div>
+        <div class="guest"><span class="av" style="background:#6d5bd0">T</span><span class="gn">Tom</span><span class="gs">Going</span></div>
+        <div class="guest"><span class="av" style="background:#12a594">L</span><span class="gn">Leah</span><span class="gs">Going</span></div>
+        <div class="guest"><span class="av" style="background:#e0912f">A</span><span class="gn">Aisha</span><span class="gs">Maybe</span></div>
+        <a class="seeall" href="#" onclick="mock('Shows first names of guests marked Going (host enabled this)');return false;">See all 15 guests →</a>
+
+        <span class="change">Prefer a different way to hear about invites?
+          <a href="#" onclick="mock('Pick Messenger / WhatsApp / email — sent to the host to approve (§2.5)');return false;">Change it</a></span>
+      </aside>
+
+    </div>
+  </div>
+
+  <p class="footnote">This invite is just for you — please don't share the link.</p>
+
+<script>
+  function mock(m){alert('Mockup:\n\n'+m);}
+  const btns=document.querySelectorAll('.rbtn'),fu=document.getElementById('followup'),
+        lab=document.getElementById('statusLab'),saved=document.getElementById('saved');
+  btns.forEach(b=>b.addEventListener('click',()=>{
+    btns.forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    lab.textContent=b.dataset.label;lab.classList.add('show');
+    fu.classList.add('show');saved.classList.remove('show');
+  }));
+  let n=0;const out=document.getElementById('plusones');
+  document.getElementById('plus').onclick=()=>{n=Math.min(n+1,9);out.textContent=n;};
+  document.getElementById('minus').onclick=()=>{n=Math.max(n-1,0);out.textContent=n;};
+  document.getElementById('save').onclick=()=>saved.classList.add('show');
+</script>
+</body>
+</html>
