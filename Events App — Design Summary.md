@@ -191,7 +191,8 @@ channels = the affected guests re-enter the send queue).
 - **Nudge non-responders** — one tap; templated message; shows exactly who will receive
   it before confirming.
 - **Day-before reminder** to Going/Maybe guests — offered as a prompt per event; manual
-  confirm in v1 (a scheduled auto-send toggle is easy later — cron already exists, §9).
+  confirm in v1 (a scheduled auto-send toggle is possible later — it would introduce the
+  first clock-driven job, via a worker loop, §9).
 - **Change notifications** on material edits and **cancellation notices** (§2.1).
 - **Anti-spam guard:** per-guest last-contacted timestamps are shown, and duplicate
   nudges won't stack in the queue.
@@ -358,8 +359,9 @@ one-stepper RSVP UX and simplifies headcount. **(c)** guest channel-change reque
   exactly one row — same shape everywhere, no special cases. Headcount = Going attendees
   (across this table) + `plus_ones` from envelopes with any Going attendee.
 - **deliveries** — each actual send over a channel (for retries / multi-channel — a
-  household envelope may deliver to several member channels). Doubles as the outbound
-  queue (§9); records the actual address/number used.
+  household envelope may deliver to several member channels). An **audit record**, not a
+  queue (§9 — sends are synchronous): records the actual address/number used and the
+  outcome.
 - **rsvp_events** — append-only history of responses (attendee, status, note, timestamp,
   and `actor` = guest / organizer, §2.3); current status + latest note are denormalized
   onto `invitation_attendees` / `invitations`.
@@ -538,9 +540,10 @@ roughly by what actually matters here.
    default); validate event times, emails, phone numbers.
 7. **CSRF.** RSVP submit and all organizer mutations are state changes — same-site
    cookies + CSRF tokens / capability-scoped POSTs (Django middleware default).
-8. **Verify provider webhooks (Phase 2).** If automated chat channels are ever added
-   (Telegram, etc., §10), verify their webhook signatures so inbound events can't be
-   forged. Not applicable in Phase 1 — no inbound anything.
+8. **Verify provider webhooks.** The **Resend bounce webhook** (§9) must be
+   signature-verified so a forged POST can't flip delivery states; same rule for any
+   later automated chat channels (Telegram etc., §10). This is the only inbound HTTP
+   besides the RSVP page itself.
 9. **Secrets.** API keys (Resend, etc.) in env/secret store, never in the repo. HTTPS +
    HSTS everywhere (free via Cloudflare Tunnel).
 
@@ -568,9 +571,17 @@ step. PWA = a manifest + small service worker on top, stack-independent.
   change the stack: still one static CSS file, no build tooling. Pico (or nothing) can
   still back the plainer organizer/admin screens where looks matter less.
 
-**Background work: no Celery/Redis.** The `deliveries` table (§5) *is* the queue: a
-Django management command processes pending sends/reminders, fired by plain cron every
-minute. Zero extra infra at this volume.
+**Background work: none in v1 — sends are synchronous (revised; cron dropped).** Every
+notification in v1 is human-initiated (§2.4: invites on Send, nudges one-tap, the
+day-before reminder is a confirmed prompt), so nothing runs on a clock and there is no
+queue to drain. Hitting Send calls the provider *in the request* — Resend's batch
+endpoint covers ~30 invites in one sub-second HTTP call — and the review screen
+immediately shows per-guest ✓/✗. The `deliveries` table (§5) is therefore an **audit
+record** (what went out, when, to which address, result), not a queue; failed rows get a
+manual retry button. **Bounces** arrive after the request completes, so a small
+signature-verified **Resend webhook** endpoint flips the delivery/invitation to bounced
+(§8). Still no Celery/Redis — and no cron either. If scheduled auto-reminders are ever
+built, add a worker-loop sidecar (or Django's Tasks framework) *at that point*.
 
 **Dependencies + packaging: uv** (matching the sibling `../keep` project — `uv sync` /
 `uv run`, `[tool.uv] package = false`, single-stage uv Dockerfile). Deployed as **one
@@ -669,8 +680,8 @@ WhatsApp Business API, at per-message rates — if pursued.
 
 **Open decisions**
 - [x] Deployment path — **decided: Path A, self-host on Proxmox + Cloudflare Tunnel** (§9).
-- [x] App stack — **decided: Django + HTMX + Pico.css, Docker Compose, cron-driven
-      deliveries queue, SQLite** (§9).
+- [x] App stack — **decided: Django + HTMX, Docker Compose, SQLite; synchronous sends
+      with `deliveries` as audit record — no cron/queue in v1** (§9).
 - [x] Organizer auth — **decided: Cloudflare Access** (one-time PIN / Google for
       allow-listed emails; JWT→Django auto-login middleware preferred) (§8).
 - [x] Native calendar Accept/Decline (ICS REPLY) — **decided: out of scope, permanently**

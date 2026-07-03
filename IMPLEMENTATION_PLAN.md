@@ -59,7 +59,7 @@ events/
 │   ├── channels/            # dispatcher + email/messenger/whatsapp plugins
 │   ├── templates/
 │   ├── static/              # app.css (bespoke), htmx.min.js, manifest, sw.js
-│   ├── management/commands/ # process_deliveries, send_reminders, …
+│   ├── management/commands/ # maintenance/one-off commands (no cron jobs — sends are sync)
 │   └── migrations/
 ├── tests/                    # pytest-django
 ├── data/                     # SQLite db + litestream (gitignored, bind-mounted to /data)
@@ -176,8 +176,9 @@ services:
   module per area; each phase's gate ships with the tests that prove it.
 - Fast, DB-backed tests (SQLite temp). Key targets: capability-token routing & the RSVP
   state machine, headcount math (individuals + household + plus-ones), the XOR/uniqueness
-  constraints, delivery-queue transitions, Access-JWT middleware (valid/invalid/missing),
-  and channel-change approval flow.
+  constraints, delivery state transitions (incl. the bounce webhook, valid + forged
+  signature), Access-JWT middleware (valid/invalid/missing), and channel-change approval
+  flow.
 
 ---
 
@@ -224,12 +225,17 @@ CSS per the mockups; all states — fresh / already-responded / cancelled / revo
 
 ### Phase 4 — Dispatcher + email (Resend) + notifications ⬜
 `core/channels/` dispatcher interface (automated vs assisted); **email plugin** via Resend
-sending from the verified domain with `Reply-To` (§6). `deliveries` rows are the queue;
-`manage.py process_deliveries` (cron, every minute) sends queued items and records
-sent/bounced. Notification templates: invite, nudge, update, cancellation (§2.4). Send
-review screen (§2.3). Ops: register domain + SPF/DKIM/DMARC.
+sending from the verified domain with `Reply-To` (§6). **Sends are synchronous in the
+request** (no cron, no queue — revised): the Send/nudge view calls Resend's batch endpoint
+(~30 invites = one sub-second call) and the review screen shows per-guest ✓/✗ immediately.
+`deliveries` rows are the **audit record** (address used, outcome); failed rows get a
+manual retry button. **Bounces** arrive async → add a signature-verified `POST
+/webhooks/resend` endpoint that flips the delivery/invitation to bounced (§8). Notification
+templates: invite, nudge, update, cancellation (§2.4). Send review screen (§2.3). Ops:
+register domain + SPF/DKIM/DMARC; configure the webhook in the Resend dashboard.
 - **Gate:** send a real invite to yourself from your domain; open→responded tracked;
-  a bounce flips state and prompts "try another channel"; nudge non-responders works.
+  a (test-mode) bounce hits the webhook, flips state, and prompts "try another channel";
+  a forged webhook POST without a valid signature is rejected; nudge non-responders works.
 
 ### Phase 5 — Assisted channels + send queue ⬜
 Messenger via `navigator.share`; WhatsApp via `wa.me/<E.164>?text=` (phones normalised with
