@@ -1,9 +1,14 @@
 # Litestream — continuous SQLite backup (§9).
 #
-# The local file replica below is a STUB so the compose stack runs. It backs up onto the
-# same volume, which is NOT a real disaster-recovery backup. Before the first real event
-# (Phase 7), point `replicas` at off-box object storage (S3 / Backblaze B2) instead —
-# uncomment and fill the block below, and set the credentials in .env.
+# Two replicas:
+#   1. `file` — always on. Same volume, so it is NOT disaster recovery; it exists so
+#      the replication + restore mechanics are always exercised and drillable.
+#   2. `s3` (Cloudflare R2) — the real off-box backup. Uncomment once the bucket +
+#      token exist (CLOUDFLARE_SETUP.md §9): R2 is S3-compatible; the free tier
+#      (10 GB) dwarfs this database forever. The bucket MUST be private (§8 item 5).
+#
+# Restore (either replica; drilled 2026-07-04 against `file`):
+#   docker compose run --rm litestream restore -o /data/restored.db /data/evently.db
 dbs:
   - path: /data/evently.db
     replicas:
@@ -13,6 +18,7 @@ dbs:
       # - type: s3
       #   bucket: evently-backups
       #   path: evently
-      #   endpoint: ${LITESTREAM_ENDPOINT}      # e.g. Backblaze B2 S3 endpoint
+      #   endpoint: ${LITESTREAM_ENDPOINT}      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      #   region: auto                          # R2 ignores region; litestream wants one
       #   access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
       #   secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}

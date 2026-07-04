@@ -1,4 +1,4 @@
-{% extends "core/base.html" %}
+{% extends "core/org_base.html" %}
 {% block title %}Dashboard — {{ event.title }}{% endblock %}
 {% block bodyclass %}dash{% endblock %}
 {% block content %}
@@ -83,7 +83,7 @@
         <td>{{ inv.plus_ones|default:"—" }}</td>
         <td class="note">{{ inv.latest_note|truncatechars:60 }}</td>
         <td class="link">
-          <input type="text" readonly value="{{ inv.rsvp_url }}" onclick="this.select()">
+          <input type="text" readonly value="{{ inv.rsvp_url }}" data-select-all>
           {% if inv.state != "revoked" %}
           <div class="row-actions">
             <form method="post" action="{% url 'invitation-action' inv.pk %}">
@@ -93,9 +93,9 @@
               <button class="mini-btn" name="action" value="nudge">Nudge</button>
               {% endif %}
               <button class="mini-btn" name="action" value="regenerate"
-                onclick="return confirm('Generate a new link? The old one stops working.')">New link</button>
+                data-confirm="Generate a new link? The old one stops working.">New link</button>
               <button class="mini-btn danger" name="action" value="revoke"
-                onclick="return confirm('Uninvite? Their link goes dead (quietly).')">Uninvite</button>
+                data-confirm="Uninvite? Their link goes dead (quietly).">Uninvite</button>
             </form>
             <details class="override">
               <summary>Set RSVP for them</summary>

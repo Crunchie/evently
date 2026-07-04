@@ -1,4 +1,4 @@
-{% extends "core/base.html" %}
+{% extends "core/org_base.html" %}
 {% block title %}Send queue — {{ event.title }}{% endblock %}
 {% block bodyclass %}dash{% endblock %}
 {% block content %}
@@ -35,8 +35,7 @@
 
       <div class="q-actions">
         {% if item.wa_url %}
-        <a class="btn q-primary" href="{{ item.wa_url }}" target="_blank" rel="noopener"
-           onclick="setTimeout(() => document.getElementById('shared-form').submit(), 300)">
+        <a class="btn q-primary" id="wa-btn" href="{{ item.wa_url }}" target="_blank" rel="noopener">
           Open WhatsApp ↗</a>
         {% else %}
         <button class="btn q-primary" type="button" id="share-btn"
@@ -57,26 +56,6 @@
       <button class="linkish" name="action" value="skip">Skip for now</button>
     </form>
   </section>
-
-  <script>
-    const sharedForm = document.getElementById("shared-form");
-    const shareBtn = document.getElementById("share-btn");
-    if (shareBtn) {
-      if (!navigator.share) shareBtn.textContent = "Copy for Messenger";
-      shareBtn.addEventListener("click", async () => {
-        const { text, url } = shareBtn.dataset;
-        try {
-          if (navigator.share) await navigator.share({ text, url });
-          else await navigator.clipboard.writeText(text + "\n" + url);
-          sharedForm.submit();
-        } catch (err) { /* share sheet dismissed — stay put */ }
-      });
-    }
-    document.getElementById("copy-btn").addEventListener("click", async (e) => {
-      await navigator.clipboard.writeText(e.target.dataset.text);
-      e.target.textContent = "Copied ✓";
-    });
-  </script>
 
   {% else %}
   <section class="card center">

@@ -54,6 +54,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "core.security.SecurityHeadersMiddleware",  # CSP on every response (§8)
     "whitenoise.middleware.WhiteNoiseMiddleware",  # serve static without nginx
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -129,3 +130,16 @@ if not DEBUG:
     CSRF_TRUSTED_ORIGINS = [
         f"https://{h}" for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")
     ]
+    # HSTS (§8 item 9). The domain is HTTPS-only forever via Cloudflare, so sticky
+    # is fine. No subdomain include: send./resend records live under the same zone.
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
+
+# Capability tokens must never land in logs (§8 item 3): django.request writes
+# "Not Found: /i/<token>" for guest 4xxs — redact before any handler sees it.
+# (django.server, the runserver dev log, is left alone: dev-only.)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {"redact_tokens": {"()": "core.security.RedactTokenFilter"}},
+    "loggers": {"django.request": {"filters": ["redact_tokens"]}},
+}

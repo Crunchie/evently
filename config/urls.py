@@ -13,6 +13,7 @@ urlpatterns = [
     path("webhooks/resend", views.resend_webhook, name="resend-webhook"),
     # Organizer side: everything under /admin so one Access rule gates it all.
     # Custom views must be declared before the admin catch-all.
+    path("admin/sw.js", views.service_worker, name="service-worker"),
     path("admin/events/<int:pk>/dashboard/", views.event_dashboard, name="event-dashboard"),
     path("admin/events/<int:pk>/send/", views.event_send, name="event-send"),
     path("admin/events/<int:pk>/queue/", views.event_queue, name="event-queue"),

@@ -1,4 +1,4 @@
-{% extends "core/base.html" %}
+{% extends "core/org_base.html" %}
 {% block title %}Send & notify — {{ event.title }}{% endblock %}
 {% block bodyclass %}dash{% endblock %}
 {% block content %}
@@ -82,7 +82,7 @@
     <h2>🛑 Cancel event</h2>
     <p class="sub">Sets the event to cancelled, freezes RSVPs, and sends a cancellation
       notice to all {{ targets.notified|length }} invited guests. No undo.</p>
-    <form method="post" onsubmit="return confirm('Cancel this event and notify everyone?')">
+    <form method="post" data-confirm="Cancel this event and notify everyone?">
       {% csrf_token %}<input type="hidden" name="action" value="cancel">
       <button class="save" {% if event.status == "cancelled" %}disabled{% endif %}>Cancel event + notify</button>
     </form>

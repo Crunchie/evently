@@ -292,16 +292,31 @@ raises on household rows (Django resolves filter args eagerly) → `Invitation.d
   reminder targeting, dashboard streams render. **Remaining:** one full organizer
   workflow on the live instance (invite → chase → approve → override → remind).
 
-### Phase 7 — PWA + security pass + production deploy ⬜
-PWA manifest + service worker (§7). Security pass (§8): CSP, `Referrer-Policy: no-referrer`
-on the RSVP page, escape all guest-authored text, don't log tokens. **Rate limiting is an
-edge config, not app code:** one Cloudflare WAF rate-limiting rule on `/i/*` (free plan
-includes one) covers RSVP + channel-change; Access already gates the organizer side.
-Stand up the Cloudflare Tunnel + Access on the Proxmox VM; Litestream backups to a
-private bucket; restore drill.
-- **Gate:** invite a **real** gathering end-to-end from the phone; confirm Access gates the
-  dashboard and your co-host gets in via one-time PIN; confirm the rate-limit rule fires
-  (hammer `/i/junk` and see 429s); verify a Litestream restore.
+### Phase 7 — PWA + security pass + production deploy 🔨 (code ✅, two edge items open)
+**Security pass (§8) — done:** strict CSP on every response via
+`core/security.py` middleware (`script-src 'self'`, no inline anything; Django's own
+admin gets `style-src 'unsafe-inline'` only, its widgets still inline styles). All
+inline JS moved to `static/core/app.js` (data-attribute driven, pages still work
+JS-free). HSTS (1 yr, prod only). `RedactTokenFilter` on `django.request` rewrites
+`/i/<token>` → `/i/[token]` before any log handler (gunicorn access log stays off).
+Guest text was already autoescaped (audited: no `|safe` / `autoescape off` /
+`style=` in templates). **PWA (§7) — done:** manifest + generated balloon icons
+(192/512/maskable + apple-touch 180), minimal service worker (cache-first for
+hashed `/static/` only, navigations always network) served at `/admin/sw.js` so its
+scope covers the organizer side; wired via `org_base.html` — organizer pages only,
+guest pages stay plain. **Litestream — drilled:** restore from the file replica
+verified 2026-07-04 (`integrity_check: ok`, all tables). R2 replica wired through
+env (`LITESTREAM_*` in compose + `.env.example`), uncomment the s3 block in
+`litestream.yml` once the bucket exists (CLOUDFLARE_SETUP.md §9).
+- **Gate — remaining:**
+  - [ ] ⚠️ **Rate-limit rule does NOT fire** — hammered `/i/junk` 150× at
+        40-parallel on 2026-07-04: all 404, zero 429. Fix in the dashboard
+        (CLOUDFLARE_SETUP.md §4 — check the rule exists, is **deployed** not
+        draft, matches *starts_with* `/i/`, on the right zone), then re-run the
+        hammer loop.
+  - [ ] Create the private R2 bucket + token, fill `LITESTREAM_*`, uncomment the
+        s3 replica, re-drill restore against R2 (§9).
+  - [ ] Invite a **real** gathering end-to-end from the phone; co-host OTP login.
 
 ### Phase 8 — Later / maybe (design-doc Phase 2) ⬜
 Automated channels as new spokes (Telegram, then SMS); recurring events

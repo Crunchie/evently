@@ -128,6 +128,15 @@ rule covers it. Organizer side needs nothing — Access already blocks strangers
 The Phase-4 webhook (`/webhooks/resend`) is outside `/i/` on purpose: Resend's
 legitimate bursts must not hit this rule.
 
+> ⚠️ **2026-07-04: the rule is NOT firing.** 150 requests to `/i/junk` at 40-parallel
+> all returned 404 from the app — nothing got a 429. The §8 record says a rule was
+> set up, so in the dashboard check that: it actually exists on the
+> `samandmonevents.party` zone, it's **deployed** (not saved as draft), the field is
+> **URI Path · starts with · `/i/`** (not *equals*), and the counting
+> characteristics are per-IP. Re-test afterwards with:
+> `seq 80 | xargs -P 20 -I{} curl -s -o /dev/null -w "%{http_code}\n" https://samandmonevents.party/i/junk | sort | uniq -c`
+> — expect mostly 429 after the first ~30.
+
 ## 5. Email DNS for Resend (Phase 4)
 
 In the [Resend dashboard](https://resend.com) → **Domains → Add domain** → enter
@@ -149,6 +158,29 @@ Also in Resend: create an **API key** → **`RESEND_API_KEY`** in `.env`. In Pha
 you'll also add a **Webhook** (Resend → Webhooks) pointing at
 `https://<HOST>/webhooks/resend` for bounce events, and copy its **signing secret** into
 `.env` (variable lands with Phase 4).
+
+## 5b. R2 bucket for Litestream backups (Phase 7)
+
+The SQLite database replicates continuously off-box via Litestream (§9 of the design
+doc). Cloudflare R2 is the natural bucket: same account, S3-compatible, free tier
+(10 GB) is effectively infinite for this database. **The bucket must stay private**
+(§8 item 5 — it holds friends' PII).
+
+1. Dashboard → **R2 Object Storage** → enable R2 if first time (needs a payment
+   method on file; the free tier itself costs nothing) → **Create bucket** →
+   name `evently-backups`, location Automatic. Leave all public access OFF.
+2. R2 → **API tokens** (or Account API tokens with the R2 template) → create a token
+   scoped to **Object Read & Write** on `evently-backups` only. Copy the
+   **Access Key ID**, **Secret Access Key**, and the account's S3 endpoint
+   (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`).
+3. `.env`: fill `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`,
+   `LITESTREAM_SECRET_ACCESS_KEY`.
+4. `litestream.yml`: uncomment the `s3:` replica block.
+5. `docker compose up -d --build`, then confirm the litestream container logs show
+   `replica sync ... replica=s3` and objects appear in the bucket.
+6. **Restore drill against R2** (the file-replica drill passed 2026-07-04):
+   `docker compose run --rm litestream restore -o /data/restore-drill.db -replica s3 /data/evently.db`
+   then integrity-check and delete the file.
 
 ## 6. What ends up in `.env`
 
@@ -179,8 +211,10 @@ ungated" confusion):
       denied at the edge.
 - [ ] From the LAN: `curl http://<vm-ip>:8000/healthz` **fails** (no published ports —
       required for the Access trust model, §8).
-- [ ] Hammer `https://<HOST>/i/junk` (e.g. `for i in $(seq 60); do curl -s -o /dev/null
-      -w "%{http_code}\n" https://<HOST>/i/junk; done`) → turns into **429**s.
+- [ ] Hammer `https://<HOST>/i/junk` (parallel — sequential curl is too slow to trip
+      30/10s: `seq 80 | xargs -P 20 -I{} curl -s -o /dev/null -w "%{http_code}\n"
+      https://<HOST>/i/junk`) → turns into **429**s.
+      **✗ FAILED 2026-07-04** — 150 hits, zero 429s; see the warning in §4.
 - [ ] (Phase 4) Resend domain shows **Verified**; a test email lands from
       `invites@<yourdomain>` with your Reply-To.
 - [ ] (Phase 4) Resend **webhook** created → `https://<HOST>/webhooks/resend`, signing

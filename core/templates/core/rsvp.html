@@ -130,21 +130,12 @@
             <option value="email">Email</option>
           </select>
         </label>
+        {# app.js hides this when Messenger is picked — it needs no address (§6). #}
         <label class="field" id="channel-value-field">Number / address
           <input type="text" name="value" placeholder="e.g. 021 555 0123">
         </label>
         <button class="save" type="submit">Request the change</button>
       </form>
-      <script>
-        // Messenger needs no address (§6) — hide the field when it's picked.
-        const kindSel = document.getElementById("channel-kind");
-        const valField = document.getElementById("channel-value-field");
-        const valInput = valField.querySelector("input");
-        kindSel.addEventListener("change", () => {
-          valField.style.display = kindSel.value === "messenger" ? "none" : "";
-          valInput.placeholder = kindSel.value === "email" ? "e.g. you@example.com" : "e.g. 021 555 0123";
-        });
-      </script>
     </details>
   </section>
   {% endif %}

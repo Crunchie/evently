@@ -1,0 +1,11 @@
+{% extends "core/base.html" %}
+{% load static %}
+{# Organizer pages are the installable PWA (§7): manifest + icon + the service
+   worker (registered by app.js via the data-sw attribute; served at /admin/sw.js
+   so its scope covers the organizer side). Guest pages stay plain. #}
+{% block head %}
+<link rel="manifest" href="{% static 'core/manifest.webmanifest' %}">
+<meta name="theme-color" content="#f15c3d">
+<link rel="apple-touch-icon" href="{% static 'core/icon-180.png' %}">
+{% endblock %}
+{% block bodyattrs %} data-sw="{% url 'service-worker' %}"{% endblock %}

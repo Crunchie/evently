@@ -9,6 +9,7 @@ from datetime import timedelta
 import phonenumbers
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.staticfiles import finders
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
@@ -54,6 +55,18 @@ MAX_NOTE_LEN = 500
 def healthz(request):
     """Liveness probe used by the Docker healthcheck (§9)."""
     return JsonResponse({"status": "ok"})
+
+
+def service_worker(request):
+    """The organizer PWA's service worker (§7). A worker's scope can't exceed its
+    script's path, so it's served under /admin/ (not /static/) — which also means
+    Cloudflare Access gates it at the edge like every other organizer request."""
+    source = finders.find("core/sw.js")
+    with open(source, encoding="utf-8") as fh:
+        body = fh.read()
+    response = HttpResponse(body, content_type="application/javascript")
+    response["Cache-Control"] = "no-cache"  # browsers re-check for SW updates
+    return response
 
 
 # --------------------------------------------------------------------------- #

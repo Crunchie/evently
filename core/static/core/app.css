@@ -16,6 +16,7 @@
   --cant: #b91c1c;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* beat .field's display:block (app.js toggles) */
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
