@@ -648,7 +648,9 @@ as the fallback if running it at home ever stops being fun.
   Koyeb, Render (DB expiry + cold-wake), Supabase (idle pause).
 
 ### Custom domain — required either way
-Needed regardless of path: **Resend requires DKIM on your own domain** (managed hosting
+**Decided: `samandmonevents.party`** (registered 2026-07-04; see CLOUDFLARE_SETUP.md §8
+for the full record). Needed regardless of path: **Resend requires DKIM on your own
+domain** (managed hosting
 only provides a `*.workers.dev` subdomain for the app itself), and RSVP links need a
 stable, trustworthy hostname.
 
@@ -698,7 +700,9 @@ WhatsApp Business API, at per-message rates — if pursued.
       allow-listed emails; JWT→Django auto-login middleware preferred) (§8).
 - [x] Native calendar Accept/Decline (ICS REPLY) — **decided: out of scope, permanently**
       (§1 non-goals). Responses only via the RSVP page.
-- [ ] Choose + register the domain; then DNS records (SPF / DKIM / DMARC) for Resend.
+- [x] Choose + register the domain — **decided: `samandmonevents.party`, registered
+      2026-07-04**; tunnel `evently` connected. Remaining: DNS records (SPF / DKIM /
+      DMARC) for Resend (runbook §5).
 - [ ] Confirm the §2 functional-spec defaults: plus-ones on by default, "show who's
       coming" off by default, no RSVP cutoff, silent uninvite, cover images deferred,
       household RSVP editable by any link-holder.

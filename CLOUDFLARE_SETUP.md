@@ -182,10 +182,10 @@ After `docker compose up` on the VM:
 
 | Item | Value |
 |---|---|
-| Domain | |
+| Domain | `samandmonevents.party` (bought 2026-07-04) |
 | Registrar | |
-| `<HOST>` (public hostname) | |
-| Tunnel name / ID | `evently` / |
+| `<HOST>` (public hostname) | `samandmonevents.party` (apex — update `.env` `ALLOWED_HOSTS` if you pick a subdomain instead) |
+| Tunnel name / ID | `evently` / `01e938d8-a007-4541-8dfe-0875b29f28ee` |
 | Zero Trust team domain | |
 | Access application + AUD tag | `evently admin` / |
 | Allow-listed emails | |
