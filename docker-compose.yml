@@ -7,6 +7,9 @@ services:
     # (cloudflared, below) is the only ingress. This is required for the Access-JWT
     # trust model (§8): the app must be unreachable except through the tunnel.
     environment:
+      # The compose-level user (below) has no home dir in the image; gunicorn 26's
+      # control server otherwise tries ~/.gunicorn at "/" and logs a permission error.
+      - HOME=/tmp
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env}
       - DEBUG=0
       - DATA_DIR=/data
