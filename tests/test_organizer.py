@@ -111,6 +111,36 @@ def test_bulk_invite_skips_already_invited(staff_client, event):
     assert Invitation.objects.filter(event=event).count() == 2
 
 
+def test_event_invite_page_lists_only_uninvited_contacts(staff_client, event):
+    invited = contact_with_email("Alice", "a@x.com")
+    Invitation.objects.create(event=event, contact=invited)  # already on the event
+    free = contact_with_email("Bob", "b@x.com")
+
+    resp = staff_client.get(reverse("event-invite", args=[event.pk]))
+    assert resp.status_code == 200
+    assert free.name.encode() in resp.content  # Bob is offered
+    assert f'value="{invited.pk}"'.encode() not in resp.content  # Alice already invited
+
+
+def test_event_invite_creates_invitations_and_redirects_to_dashboard(staff_client, event):
+    a = contact_with_email("Alice", "a@x.com")
+    b = contact_with_email("Bob", "b@x.com")
+
+    resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [a.pk, b.pk]})
+    assert resp.status_code == 302
+    assert reverse("event-dashboard", args=[event.pk]) in resp.url
+    assert Invitation.objects.filter(event=event).count() == 2
+    assert InvitationAttendee.objects.filter(invitation__event=event).count() == 2
+
+
+def test_event_invite_skips_already_invited(staff_client, event):
+    a = contact_with_email("Alice", "a@x.com")
+    Invitation.objects.create(event=event, contact=a)
+    resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [a.pk]})
+    assert Invitation.objects.filter(event=event, contact=a).count() == 1  # no duplicate
+    assert "msg=no+new+guests" in resp.url
+
+
 # --------------------------------------------------------------------------- #
 #  Organizer override (§2.3)
 # --------------------------------------------------------------------------- #

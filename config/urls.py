@@ -15,6 +15,7 @@ urlpatterns = [
     # Custom views must be declared before the admin catch-all.
     path("admin/sw.js", views.service_worker, name="service-worker"),
     path("admin/events/<int:pk>/dashboard/", views.event_dashboard, name="event-dashboard"),
+    path("admin/events/<int:pk>/invite/", views.event_invite, name="event-invite"),
     path("admin/events/<int:pk>/send/", views.event_send, name="event-send"),
     path("admin/events/<int:pk>/queue/", views.event_queue, name="event-queue"),
     path("admin/invitations/<int:pk>/action/", views.invitation_action, name="invitation-action"),

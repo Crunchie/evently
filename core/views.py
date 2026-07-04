@@ -14,7 +14,7 @@ from django.contrib.staticfiles import finders
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Count, Max, Prefetch
+from django.db.models import Count, Max, Prefetch, Q
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -33,6 +33,7 @@ from .channels import (
 from .ics import event_ics, google_calendar_url
 from .messaging import share_payload
 from .models import (
+    Contact,
     ContactChannel,
     Delivery,
     Event,
@@ -385,6 +386,43 @@ def event_send(request, pk):
         )
 
     return render(request, "core/send.html", {"event": event, "targets": targets})
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def event_invite(request, pk):
+    """Add guests to this event (§2.2): the event-side counterpart to the Contacts
+    admin action. Lists contacts not yet on this event; ticking them creates one
+    invitation each (attendees + token via Invitation.save). Sending stays the
+    separate reviewed step on the send screen, where we land afterwards."""
+    event = get_object_or_404(Event, pk=pk)
+
+    if request.method == "POST":
+        selected = Contact.objects.filter(pk__in=request.POST.getlist("contacts"))
+        already = set(
+            Invitation.objects.filter(event=event, contact__in=selected).values_list(
+                "contact_id", flat=True
+            )
+        )
+        created = 0
+        for contact in selected:
+            if contact.pk not in already:  # skip anyone already invited (defensive)
+                Invitation.objects.create(event=event, contact=contact)
+                created += 1
+        dash = reverse("event-dashboard", args=[event.pk])
+        msg = f"{created} guest{'' if created == 1 else 's'} added" if created else "no new guests"
+        return redirect(f"{dash}?{urlencode({'did': 'invited', 'msg': msg})}")
+
+    q = request.GET.get("q", "").strip()
+    contacts = (
+        Contact.objects.exclude(invitations__event=event)  # not already on this event
+        .select_related("household")
+        .prefetch_related("channels")
+        .order_by("name")
+    )
+    if q:
+        contacts = contacts.filter(Q(name__icontains=q) | Q(nickname__icontains=q))
+    return render(request, "core/invite.html", {"event": event, "contacts": contacts, "q": q})
 
 
 # --------------------------------------------------------------------------- #
