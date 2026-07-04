@@ -1,12 +1,23 @@
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import time
+
+from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count, Prefetch
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods, require_POST
 
+from .channels import dispatch_email, send_targets
 from .ics import event_ics, google_calendar_url
-from .models import Event, Invitation, InvitationAttendee, RsvpEvent
+from .models import Delivery, Event, Invitation, InvitationAttendee, RsvpEvent
 
 RSVP_CHOICES = {
     InvitationAttendee.Rsvp.GOING,
@@ -179,5 +190,105 @@ def event_dashboard(request, pk):
         "invited": attendee_qs.count(),
         "opened": event.invitations.filter(opened_at__isnull=False).count(),
         "expected": event.expected_headcount,
+        "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped")}
+        if request.GET.get("did")
+        else None,
     }
     return render(request, "core/dashboard.html", context)
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def event_send(request, pk):
+    """Send review screen (§2.3) + the notify actions (§2.4). Sends are synchronous
+    (§9): the redirect back to the dashboard carries per-guest ✓/✗ counts."""
+    event = get_object_or_404(Event, pk=pk)
+    targets = send_targets(event)
+
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        base_url = request.build_absolute_uri("/").rstrip("/")
+        if action == "invites":
+            result = dispatch_email(targets["pending_with_email"], "invite", base_url)
+            if result["sent"] and event.status == Event.Status.DRAFT:
+                event.status = Event.Status.ACTIVE  # first send flips draft → active (§2.1)
+                event.save(update_fields=["status", "updated_at"])
+        elif action == "retry":
+            result = dispatch_email(targets["retryable"], "invite", base_url)
+        elif action == "nudge":
+            result = dispatch_email(targets["non_responders"], "nudge", base_url)
+        elif action == "update":
+            result = dispatch_email(targets["notified"], "update", base_url)
+        elif action == "cancel":
+            if event.status != Event.Status.CANCELLED:
+                event.status = Event.Status.CANCELLED
+                event.save(update_fields=["status", "updated_at"])
+            result = dispatch_email(targets["notified"], "cancellation", base_url)
+        else:
+            return HttpResponseForbidden("Unknown action")
+        dash = reverse("event-dashboard", args=[event.pk])
+        return redirect(
+            f"{dash}?did={action}&sent={result['sent']}"
+            f"&failed={result['failed']}&skipped={result['skipped']}"
+        )
+
+    return render(request, "core/send.html", {"event": event, "targets": targets})
+
+
+# --------------------------------------------------------------------------- #
+#  Resend bounce webhook (§9) — the only inbound HTTP besides the RSVP page (§8).
+#  Signed by Resend using the Svix scheme; verified here, fail closed.
+# --------------------------------------------------------------------------- #
+SIGNATURE_TOLERANCE_SECONDS = 300
+
+
+def _valid_webhook_signature(request) -> bool:
+    secret = settings.RESEND_WEBHOOK_SECRET
+    if not secret:
+        return False  # unset secret = webhook disabled, never open
+    msg_id = request.headers.get("svix-id", "")
+    stamp = request.headers.get("svix-timestamp", "")
+    signatures = request.headers.get("svix-signature", "")
+    if not (msg_id and stamp and signatures):
+        return False
+    try:
+        if abs(time.time() - int(stamp)) > SIGNATURE_TOLERANCE_SECONDS:
+            return False  # replay protection
+        raw = secret.split("_", 1)[1] if secret.startswith("whsec_") else secret
+        key = base64.b64decode(raw)
+    except (ValueError, IndexError, binascii.Error):
+        return False
+    signed = f"{msg_id}.{stamp}.".encode() + request.body
+    expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
+    return any(
+        hmac.compare_digest(expected, candidate.split(",", 1)[1])
+        for candidate in signatures.split()
+        if "," in candidate
+    )
+
+
+@csrf_exempt
+@require_POST
+def resend_webhook(request):
+    if not _valid_webhook_signature(request):
+        return HttpResponseForbidden("invalid webhook signature")
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponse(status=400)
+
+    if payload.get("type") in ("email.bounced", "email.complained"):
+        data = payload.get("data") or {}
+        provider_id = data.get("email_id") or data.get("id") or ""
+        delivery = (
+            Delivery.objects.select_related("invitation")
+            .filter(provider_message_id=provider_id)
+            .first()
+        )
+        if delivery:
+            delivery.status = Delivery.Status.BOUNCED
+            delivery.error = payload["type"]
+            delivery.save(update_fields=["status", "error", "updated_at"])
+            # Ladder rules apply: a bounce can't override an open/response (§2.3).
+            delivery.invitation.advance_state(Invitation.State.BOUNCED)
+    return JsonResponse({"ok": True})

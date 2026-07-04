@@ -9,7 +9,14 @@
     <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span>
   </h1>
   <p class="meta">{{ event.starts_at|date:"D, j M Y · g:i A" }}{% if event.location_text %} · {{ event.location_text }}{% endif %}
-    · <a href="{% url 'admin:core_event_change' event.pk %}">edit in admin</a></p>
+    · <a href="{% url 'admin:core_event_change' event.pk %}">edit in admin</a>
+    · <a href="{% url 'event-send' event.pk %}"><strong>✉️ send &amp; notify</strong></a></p>
+
+  {% if result %}
+  <div class="banner {% if result.failed != '0' %}bad{% else %}ok{% endif %}">
+    {{ result.did|capfirst }}: {{ result.sent }} sent{% if result.failed != '0' %} · {{ result.failed }} failed{% endif %}{% if result.skipped != '0' %} · {{ result.skipped }} skipped (no email){% endif %}
+  </div>
+  {% endif %}
 
   <section class="stats">
     <div class="stat hero"><div class="n">{{ expected }}</div><div class="l">Total expected</div></div>

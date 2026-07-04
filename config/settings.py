@@ -23,6 +23,12 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",
     "127.0.0.1",
 ]
 
+# Email via Resend (§6): synchronous sends from the request; bounces via webhook (§9).
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_WEBHOOK_SECRET = os.environ.get("RESEND_WEBHOOK_SECRET", "")  # Svix signing secret
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "")  # e.g. "Sam & Kate <invites@yourdomain>"
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", "")  # personal inbox for real replies
+
 # Cloudflare Access — organizer auth at the edge (§8, CLOUDFLARE_SETUP.md §3).
 # Both unset in local dev → the middleware is inert and normal Django login applies.
 CF_ACCESS_TEAM_DOMAIN = os.environ.get("CF_ACCESS_TEAM_DOMAIN", "")  # team.cloudflareaccess.com

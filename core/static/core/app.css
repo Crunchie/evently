@@ -180,3 +180,13 @@ table.guests {
   border-radius: 8px; color: var(--muted); background: #fafafa;
 }
 .guests .empty { text-align: center; color: var(--muted); padding: 2rem; }
+
+/* send & notify page */
+body.dash .card h2 { font-size: 1.05rem; font-weight: 800; margin-bottom: .4rem; }
+body.dash .card .sub { color: var(--muted); font-size: .9rem; margin: .2rem 0 .8rem; }
+body.dash .card .sub.warn { color: var(--maybe); }
+body.dash .card .save { width: auto; padding: .6rem 1.1rem; margin-top: 0; font-size: .9rem; }
+body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
+.card.danger { border: 1.5px solid #fecaca; }
+.card.danger .save { background: #dc2626; }
+.card.danger .save:hover { background: #b91c1c; }

@@ -233,19 +233,23 @@ per-member statuses + copyable RSVP links (the hand-delivery flow).
 - **Gate — passing:** admin-created event → open link → RSVP single + household → counts
   update on the dashboard; no email involved. 15 new tests (36 total green).
 
-### Phase 4 — Dispatcher + email (Resend) + notifications ⬜
-`core/channels/` dispatcher interface (automated vs assisted); **email plugin** via Resend
-sending from the verified domain with `Reply-To` (§6). **Sends are synchronous in the
-request** (no cron, no queue — revised): the Send/nudge view calls Resend's batch endpoint
-(~30 invites = one sub-second call) and the review screen shows per-guest ✓/✗ immediately.
-`deliveries` rows are the **audit record** (address used, outcome); failed rows get a
-manual retry button. **Bounces** arrive async → add a signature-verified `POST
-/webhooks/resend` endpoint that flips the delivery/invitation to bounced (§8). Notification
-templates: invite, nudge, update, cancellation (§2.4). Send review screen (§2.3). Ops:
-register domain + SPF/DKIM/DMARC; configure the webhook in the Resend dashboard.
-- **Gate:** send a real invite to yourself from your domain; open→responded tracked;
-  a (test-mode) bounce hits the webhook, flips state, and prompts "try another channel";
-  a forged webhook POST without a valid signature is rejected; nudge non-responders works.
+### Phase 4 — Dispatcher + email (Resend) + notifications ✅
+`core/channels.py` (dispatcher: address resolution incl. household multi-recipient with
+dedupe; synchronous `dispatch_email` via Resend's batch endpoint, chunked at 100;
+Delivery rows as audit, FAILED kept on provider errors) + `core/messaging.py` (all four
+templates: invite / nudge / update / cancellation — text + minimal HTML, every message
+carries the RSVP link). **Send & notify screen** at `/admin/events/<pk>/send/` (§2.3
+review breakdown: with-email / no-email / retryable, plus nudge / update / cancel+notify
+actions; first send flips draft→active; results land on the dashboard banner as ✓/✗).
+**Bounce webhook** `POST /webhooks/resend`: Svix-scheme HMAC verification (timestamp
+tolerance, constant-time compare, fail-closed on unset secret) → delivery BOUNCED +
+invitation through the ladder (an open can't be regressed). Env: `RESEND_WEBHOOK_SECRET`.
+- **Gate — passing in test mode:** 14 new tests (50 green) — send flow end-to-end incl.
+  idempotency, provider-failure → FAILED + retryable, household dedupe/same-link, nudge
+  targets only non-responders, cancel freezes + notifies, forged/stale/missing-signature
+  webhooks rejected, valid bounce flips state without regressing opens. **Remaining ops
+  (needs the real domain):** verify domain in Resend, send a real invite to yourself,
+  configure the webhook + secret (CLOUDFLARE_SETUP.md §5).
 
 ### Phase 5 — Assisted channels + send queue ⬜
 Messenger via `navigator.share`; WhatsApp via `wa.me/<E.164>?text=` (phones normalised with

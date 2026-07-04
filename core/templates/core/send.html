@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}
+{% block title %}Send & notify — {{ event.title }}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap wide">
+
+  <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a></p>
+  <h1>Send &amp; notify <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span></h1>
+  <p class="meta">{{ event.title }} · {{ event.starts_at|date:"D, j M Y · g:i A" }}</p>
+
+  <section class="card">
+    <h2>✉️ Invites</h2>
+    <p class="sub">{{ targets.pending_with_email|length }} pending invitation{{ targets.pending_with_email|length|pluralize }} with an email address.</p>
+    {% if targets.pending_no_email %}
+    <p class="sub warn">⚠ {{ targets.pending_no_email|length }} without one (assisted share arrives in Phase 5 — or copy their link from the dashboard):
+      {% for inv in targets.pending_no_email %}{{ inv.household.name|default:inv.contact.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invites">
+      <button class="save" {% if not targets.pending_with_email %}disabled{% endif %}>
+        Send {{ targets.pending_with_email|length }} invite{{ targets.pending_with_email|length|pluralize }}</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>🔔 Nudge non-responders</h2>
+    <p class="sub">{{ targets.non_responders|length }} invited but yet to answer:
+      {% for inv in targets.non_responders %}{{ inv.household.name|default:inv.contact.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="nudge">
+      <button class="save" {% if not targets.non_responders %}disabled{% endif %}>Nudge {{ targets.non_responders|length }}</button>
+    </form>
+  </section>
+
+  {% if targets.retryable %}
+  <section class="card">
+    <h2>↺ Retry bounced / failed</h2>
+    <p class="sub">{% for inv in targets.retryable %}{{ inv.household.name|default:inv.contact.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="retry">
+      <button class="save">Retry {{ targets.retryable|length }}</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>📣 Send an update</h2>
+    <p class="sub">Details changed? Notify all {{ targets.notified|length }} already-invited guests.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update">
+      <button class="save" {% if not targets.notified %}disabled{% endif %}>Send update to {{ targets.notified|length }}</button>
+    </form>
+  </section>
+
+  <section class="card danger">
+    <h2>🛑 Cancel event</h2>
+    <p class="sub">Sets the event to cancelled, freezes RSVPs, and sends a cancellation
+      notice to all {{ targets.notified|length }} invited guests. No undo.</p>
+    <form method="post" onsubmit="return confirm('Cancel this event and notify everyone?')">
+      {% csrf_token %}<input type="hidden" name="action" value="cancel">
+      <button class="save" {% if event.status == "cancelled" %}disabled{% endif %}>Cancel event + notify</button>
+    </form>
+  </section>
+
+</main>
+{% endblock %}
