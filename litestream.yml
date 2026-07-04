@@ -12,13 +12,12 @@
 dbs:
   - path: /data/evently.db
     replicas:
-      - type: file
-        path: /data/backups/evently
-
-      # - type: s3
-      #   bucket: evently-backups
-      #   path: evently
-      #   endpoint: ${LITESTREAM_ENDPOINT}      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-      #   region: auto                          # R2 ignores region; litestream wants one
-      #   access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
-      #   secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+      # - type: file
+      #   path: /data/backups/evently
+      - type: s3
+        bucket: evently-backups
+        path: evently
+        endpoint: ${LITESTREAM_ENDPOINT}      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+        region: auto                          # R2 ignores region; litestream wants one
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
