@@ -23,6 +23,11 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",
     "127.0.0.1",
 ]
 
+# Cloudflare Access — organizer auth at the edge (§8, CLOUDFLARE_SETUP.md §3).
+# Both unset in local dev → the middleware is inert and normal Django login applies.
+CF_ACCESS_TEAM_DOMAIN = os.environ.get("CF_ACCESS_TEAM_DOMAIN", "")  # team.cloudflareaccess.com
+CF_ACCESS_AUD = os.environ.get("CF_ACCESS_AUD", "")  # Access application AUD tag
+
 # SQLite DB + Litestream backups live here (bind-mounted to /data in Docker).
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -44,6 +49,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.auth.CloudflareAccessMiddleware",  # after auth middleware: needs request.user
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

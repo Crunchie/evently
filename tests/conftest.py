@@ -10,3 +10,6 @@ def _plain_static_storage(settings):
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
+    # Serve static via finders (no STATIC_ROOT scan) — silences WhiteNoise's
+    # "No directory at staticfiles/" warning on every test client.
+    settings.WHITENOISE_AUTOREFRESH = True

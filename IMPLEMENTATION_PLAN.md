@@ -205,14 +205,18 @@ members inline on households; append-only `RsvpEvent` view-only) — the free or
   `expected_headcount` (individuals + household members + envelope plus-ones); admin
   changelists + the invitation add-form (with attendee inline) all render 200. 8 tests green.
 
-### Phase 2 — Organizer auth (Cloudflare Access) ⬜
-`core/auth.py`: middleware validating the `Cf-Access-Jwt-Assertion` JWT against the team
-JWKS (`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`), get-or-create the Django user by verified
-email, auto-login (§8). Local-dev bypass: when `CF_ACCESS_*` unset (DEBUG), fall back to
-normal Django admin login. Behind-proxy settings (`SECURE_PROXY_SSL_HEADER`,
-`CSRF_TRUSTED_ORIGINS`, `ALLOWED_HOSTS`).
-- **Gate:** request with a forged-but-well-formed dev JWT logs in; missing/invalid → 403
-  in prod mode; dev login works locally. Middleware unit-tested.
+### Phase 2 — Organizer auth (Cloudflare Access) ✅
+`core/auth.py`: `CloudflareAccessMiddleware` validates the `Cf-Access-Jwt-Assertion` JWT
+(RS256 against the team JWKS via cached `PyJWKClient`; audience + issuer + exp + email
+required), then get-or-creates the Django user by verified email with full organizer
+rights and auto-logs-in — Access is the only login. Gated paths: `/admin…` only; guest
+paths untouched. When `CF_ACCESS_*` unset: inert (normal Django login), with a loud
+warning if that happens in production. Behind-proxy settings were already in place
+(Phase 0). Edge-side config documented in `CLOUDFLARE_SETUP.md` §3.
+- **Gate — passing:** 9 middleware tests (locally-signed RSA tokens, JWKS patched out):
+  valid JWT → admin 200 + organizer user created; missing / bad-signature /
+  wrong-audience / expired / no-email → 403; guest paths not gated; unconfigured →
+  Django login redirect; existing user promoted to organizer. 21 tests green total.
 
 ### Phase 3 — Event flow + RSVP page (the core loop, no messaging) ⬜
 The heart of the product, usable by copy-pasting links by hand. Organizer views for
