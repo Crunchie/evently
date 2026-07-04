@@ -4,10 +4,15 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import timedelta
 
+import phonenumbers
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Count, Prefetch
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.db import transaction
+from django.db.models import Count, Max, Prefetch
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -15,15 +20,33 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .channels import dispatch_email, send_targets
+from .channels import (
+    assisted_channels,
+    dispatch_email,
+    email_channels,
+    send_targets,
+    shared_channel_pairs,
+    wa_link,
+)
 from .ics import event_ics, google_calendar_url
-from .models import Delivery, Event, Invitation, InvitationAttendee, RsvpEvent
+from .messaging import share_payload
+from .models import (
+    ContactChannel,
+    Delivery,
+    Event,
+    Invitation,
+    InvitationAttendee,
+    RsvpEvent,
+    make_token,
+)
 
 RSVP_CHOICES = {
     InvitationAttendee.Rsvp.GOING,
     InvitationAttendee.Rsvp.MAYBE,
     InvitationAttendee.Rsvp.CANT,
 }
+# The organizer override (§2.3) can also take an answer *back* to no-reply.
+ORGANIZER_RSVP_CHOICES = RSVP_CHOICES | {InvitationAttendee.Rsvp.NO_REPLY}
 MAX_PLUS_ONES = 9  # absolute ceiling when the event sets no cap
 MAX_NOTE_LEN = 500
 
@@ -101,6 +124,11 @@ def rsvp_page(request, token):
         "past": event.is_past,
         "can_rsvp": can_rsvp,
         "saved": request.GET.get("saved") == "1",
+        "channel_requested": request.GET.get("channel_requested") == "1",
+        "channel_error": request.GET.get("channel_error") == "1",
+        "channel_pending": invitation.channel_requests.filter(
+            status=ContactChannel.Status.PROPOSED
+        ).exists(),
         "plus_cap": event.plus_ones_cap or MAX_PLUS_ONES,
         "going_names": going_names,
         "google_url": google_calendar_url(event),
@@ -108,11 +136,19 @@ def rsvp_page(request, token):
     return _guest_render(request, "core/rsvp.html", context)
 
 
-def _apply_rsvp(request, invitation: Invitation) -> None:
-    """Write the guest's answers: attendee statuses + history, envelope note/plus-ones.
+def _apply_rsvp(
+    request,
+    invitation: Invitation,
+    *,
+    actor: str = RsvpEvent.Actor.GUEST,
+    actor_user=None,
+    allowed: set = RSVP_CHOICES,
+) -> None:
+    """Write RSVP answers: attendee statuses + history, envelope note/plus-ones.
 
-    Status changes append to rsvp_events (actor=guest, §5); a note-only edit updates the
-    denormalized latest_note without a history row.
+    Shared by the guest page and the organizer override (§2.3) — the same form
+    fields, different actor recorded in the append-only history (§5). A note-only
+    edit updates the denormalized latest_note without a history row.
     """
     event = invitation.event
     now = timezone.now()
@@ -120,12 +156,16 @@ def _apply_rsvp(request, invitation: Invitation) -> None:
 
     for attendee in invitation.attendees.all():
         new_status = request.POST.get(f"status_{attendee.pk}", "")
-        if new_status in RSVP_CHOICES and new_status != attendee.rsvp_status:
+        if new_status in allowed and new_status != attendee.rsvp_status:
             attendee.rsvp_status = new_status
-            attendee.responded_at = now
+            attendee.responded_at = now if new_status != InvitationAttendee.Rsvp.NO_REPLY else None
             attendee.save(update_fields=["rsvp_status", "responded_at", "updated_at"])
             RsvpEvent.objects.create(
-                attendee=attendee, status=new_status, note=note, actor=RsvpEvent.Actor.GUEST
+                attendee=attendee,
+                status=new_status,
+                note=note,
+                actor=actor,
+                actor_user=actor_user,
             )
 
     if event.allow_plus_ones:
@@ -155,10 +195,71 @@ def rsvp_ics(request, token):
     return response
 
 
+@require_POST
+def rsvp_channel_request(request, token):
+    """Guest asks to be reached differently (§2.5): creates a PROPOSED channel that
+    sits in the dashboard approval queue — the organizer's review is the gate (§8).
+    No login: the capability link itself is the authentication."""
+    invitation = _get_invitation(token)
+    if invitation.state == Invitation.State.REVOKED:
+        return _guest_render(request, "core/rsvp_unavailable.html", status=410)
+
+    kind = request.POST.get("kind", "")
+    value = request.POST.get("value", "").strip()[:254]
+    if kind not in (
+        ContactChannel.Kind.EMAIL,
+        ContactChannel.Kind.WHATSAPP,
+        ContactChannel.Kind.MESSENGER,
+    ):
+        return redirect(f"{invitation.rsvp_path}?channel_error=1")
+
+    # Whose channel: the single contact, or the chosen household member.
+    if invitation.contact_id:
+        contact = invitation.contact
+    else:
+        contact = invitation.household.members.filter(pk=request.POST.get("member")).first()
+        if contact is None:
+            return redirect(f"{invitation.rsvp_path}?channel_error=1")
+
+    if kind == ContactChannel.Kind.EMAIL:
+        try:
+            validate_email(value)
+        except ValidationError:
+            return redirect(f"{invitation.rsvp_path}?channel_error=1")
+    elif kind == ContactChannel.Kind.WHATSAPP:
+        try:
+            parsed = phonenumbers.parse(value, settings.PHONE_REGION)
+        except phonenumbers.NumberParseException:
+            return redirect(f"{invitation.rsvp_path}?channel_error=1")
+        if not phonenumbers.is_valid_number(parsed):
+            return redirect(f"{invitation.rsvp_path}?channel_error=1")
+        value = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+    else:  # Messenger needs no address (§6)
+        value = ""
+
+    with transaction.atomic():
+        # One pending request per person: a newer ask replaces the older one.
+        contact.channels.filter(
+            status=ContactChannel.Status.PROPOSED, source=ContactChannel.Source.GUEST
+        ).delete()
+        ContactChannel.objects.create(
+            contact=contact,
+            kind=kind,
+            value=value,
+            status=ContactChannel.Status.PROPOSED,
+            source=ContactChannel.Source.GUEST,
+            requested_via=invitation,
+        )
+    return redirect(f"{invitation.rsvp_path}?channel_requested=1")
+
+
 # --------------------------------------------------------------------------- #
 #  Organizer side — basic per-event dashboard (§2.6). Lives under /admin so the
 #  single Cloudflare Access path rule covers it (CLOUDFLARE_SETUP.md).
 # --------------------------------------------------------------------------- #
+REMINDER_WINDOW_HOURS = 48  # how close the event must be before the prompt appears
+
+
 @staff_member_required
 def event_dashboard(request, pk):
     event = get_object_or_404(Event, pk=pk)
@@ -168,18 +269,29 @@ def event_dashboard(request, pk):
             Prefetch(
                 "attendees",
                 queryset=InvitationAttendee.objects.select_related("contact").order_by("id"),
-            )
+            ),
+            "contact__channels",
+            "household__members__channels",
         )
+        .annotate(last_contacted=Max("deliveries__sent_at"))
         .order_by("id")
     )
     for inv in invitations:
         inv.rsvp_url = request.build_absolute_uri(inv.rsvp_path)
+        inv.route_email = bool(email_channels(inv))
+        inv.route_assisted = bool(assisted_channels(inv))
 
     attendee_qs = InvitationAttendee.objects.filter(invitation__event=event)
     by_status = {
         row["rsvp_status"]: row["n"]
         for row in attendee_qs.values("rsvp_status").annotate(n=Count("id"))
     }
+
+    # Anti-spam context + Phase 6 streams (§2.4/§2.6).
+    until_start = event.starts_at - timezone.now()
+    reminder_due = event.status == Event.Status.ACTIVE and timedelta() < until_start <= timedelta(
+        hours=REMINDER_WINDOW_HOURS
+    )
     context = {
         "event": event,
         "invitations": invitations,
@@ -190,7 +302,15 @@ def event_dashboard(request, pk):
         "invited": attendee_qs.count(),
         "opened": event.invitations.filter(opened_at__isnull=False).count(),
         "expected": event.expected_headcount,
-        "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped")}
+        "pending_channels": ContactChannel.objects.filter(status=ContactChannel.Status.PROPOSED)
+        .select_related("contact", "requested_via__event")
+        .order_by("created_at"),
+        "notes": [i for i in invitations if i.latest_note],
+        "history": RsvpEvent.objects.filter(attendee__invitation__event=event).select_related(
+            "attendee__contact", "actor_user"
+        )[:30],
+        "reminder_due": reminder_due,
+        "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped", "msg")}
         if request.GET.get("did")
         else None,
     }
@@ -224,6 +344,8 @@ def event_send(request, pk):
                 event.status = Event.Status.CANCELLED
                 event.save(update_fields=["status", "updated_at"])
             result = dispatch_email(targets["notified"], "cancellation", base_url)
+        elif action == "reminder":
+            result = dispatch_email(targets["reminder_email"], "reminder", base_url)
         else:
             return HttpResponseForbidden("Unknown action")
         dash = reverse("event-dashboard", args=[event.pk])
@@ -233,6 +355,169 @@ def event_send(request, pk):
         )
 
     return render(request, "core/send.html", {"event": event, "targets": targets})
+
+
+# --------------------------------------------------------------------------- #
+#  Send queue — assisted channels (§6, Phase 5). One share at a time: the
+#  organizer taps through Messenger/WhatsApp invitees; each share is recorded as
+#  an optimistic SHARED delivery (the guest's link click is the real signal).
+# --------------------------------------------------------------------------- #
+QUEUE_TARGET_KEY = {
+    "invite": "pending_assisted",
+    "nudge": "non_responders_assisted",
+    "update": "notified_assisted",
+    "cancellation": "notified_assisted",
+    "reminder": "reminder_assisted",
+}
+
+
+def _queue_items(event: Event, kind: str) -> list[tuple[Invitation, ContactChannel]]:
+    """The flattened queue: one card per (envelope, assisted channel) — a household
+    with two WhatsApp parents is two taps carrying the same link. For invites,
+    already-shared copies drop out; notify kinds re-share deliberately (§2.4)."""
+    targets = send_targets(event)
+    items = [
+        (invitation, channel)
+        for invitation in targets[QUEUE_TARGET_KEY[kind]]
+        for channel in assisted_channels(invitation)
+    ]
+    if kind == "invite":
+        shared = shared_channel_pairs(event)
+        items = [(inv, ch) for inv, ch in items if (inv.pk, ch.pk) not in shared]
+    return items
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def event_queue(request, pk):
+    event = get_object_or_404(Event, pk=pk)
+    params = request.POST if request.method == "POST" else request.GET
+    kind = params.get("kind", "invite")
+    if kind not in QUEUE_TARGET_KEY:
+        return HttpResponseForbidden("Unknown queue kind")
+    try:
+        n = max(0, int(params.get("n", 0)))
+    except ValueError:
+        n = 0
+
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        invitation = get_object_or_404(Invitation, pk=request.POST.get("invitation"), event=event)
+        channel = get_object_or_404(ContactChannel, pk=request.POST.get("channel"))
+        if action == "shared":
+            Delivery.objects.create(
+                invitation=invitation,
+                channel=channel,
+                kind=channel.kind,
+                address_used=channel.value,
+                status=Delivery.Status.SHARED,
+                sent_at=timezone.now(),
+            )
+            invitation.advance_state(Invitation.State.SHARED)
+            # Invite-kind items leave the queue once shared (state moved past
+            # PENDING) — the list shifts under n. Other kinds stay put: step over.
+            items = _queue_items(event, kind)
+            if n < len(items) and (items[n][0].pk, items[n][1].pk) == (invitation.pk, channel.pk):
+                n += 1
+        elif action == "skip":
+            n += 1
+        else:
+            return HttpResponseForbidden("Unknown action")
+        return redirect(f"{reverse('event-queue', args=[event.pk])}?kind={kind}&n={n}")
+
+    items = _queue_items(event, kind)
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    item = None
+    if n < len(items):
+        invitation, channel = items[n]
+        url = base_url + invitation.rsvp_path
+        payload = share_payload(kind, invitation, url)
+        item = {
+            "invitation": invitation,
+            "channel": channel,
+            "payload": payload,
+            "wa_url": (
+                wa_link(channel.value, payload["text"])
+                if channel.kind == ContactChannel.Kind.WHATSAPP
+                else None
+            ),
+            "last_contacted": invitation.deliveries.aggregate(t=Max("sent_at"))["t"],
+        }
+    context = {"event": event, "kind": kind, "n": n, "total": len(items), "item": item}
+    return render(request, "core/queue.html", context)
+
+
+# --------------------------------------------------------------------------- #
+#  Per-guest row actions + organizer override (§2.3) and the channel-change
+#  approval queue (§2.5) — all POST-only, all staff-only, all land back on the
+#  dashboard with a banner.
+# --------------------------------------------------------------------------- #
+def _dash(event_pk, did, **params):
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(f"{reverse('event-dashboard', args=[event_pk])}?did={did}&{query}")
+
+
+@staff_member_required
+@require_POST
+def invitation_action(request, pk):
+    invitation = get_object_or_404(Invitation.objects.select_related("event"), pk=pk)
+    action = request.POST.get("action", "")
+    base_url = request.build_absolute_uri("/").rstrip("/")
+
+    if action == "revoke":
+        invitation.advance_state(Invitation.State.REVOKED)
+        return _dash(invitation.event_id, action, msg="Invitation revoked — link now dead")
+    if action == "regenerate":
+        # New capability token: the old link is dead, the invitation lives on (§2.3).
+        invitation.token = make_token()
+        invitation.save(update_fields=["token", "updated_at"])
+        return _dash(invitation.event_id, action, msg="New link generated — old one is dead")
+    if action in ("resend", "nudge"):
+        kind = "invite" if action == "resend" else "nudge"
+        result = dispatch_email([invitation], kind, base_url)
+        return _dash(invitation.event_id, action, **result)
+    return HttpResponseForbidden("Unknown action")
+
+
+@staff_member_required
+@require_POST
+def invitation_override(request, pk):
+    """Set RSVP status / plus-ones / note on the guest's behalf (§2.3). One form
+    covers every member of a household envelope; recorded as actor=organizer, and
+    the guest can still change it later via their link — last write wins."""
+    invitation = get_object_or_404(Invitation.objects.select_related("event"), pk=pk)
+    _apply_rsvp(
+        request,
+        invitation,
+        actor=RsvpEvent.Actor.ORGANIZER,
+        actor_user=request.user,
+        allowed=ORGANIZER_RSVP_CHOICES,
+    )
+    return _dash(invitation.event_id, "override", msg="RSVP updated on their behalf")
+
+
+@staff_member_required
+@require_POST
+def channel_request_action(request, pk):
+    """One-tap approve / reject for a guest-requested channel (§2.5). Approval makes
+    it the contact's preferred channel — future sends follow it."""
+    channel = get_object_or_404(ContactChannel, pk=pk, status=ContactChannel.Status.PROPOSED)
+    action = request.POST.get("action", "")
+    event_pk = request.POST.get("event", "")
+    if action == "approve":
+        with transaction.atomic():
+            channel.contact.channels.filter(is_preferred=True).exclude(pk=channel.pk).update(
+                is_preferred=False
+            )
+            channel.status = ContactChannel.Status.ACTIVE
+            channel.is_preferred = True
+            channel.save(update_fields=["status", "is_preferred", "updated_at"])
+        return _dash(event_pk, action, msg=f"{channel.contact.name} → {channel.get_kind_display()}")
+    if action == "reject":
+        name = channel.contact.name
+        channel.delete()
+        return _dash(event_pk, action, msg=f"Request from {name} rejected")
+    return HttpResponseForbidden("Unknown action")
 
 
 # --------------------------------------------------------------------------- #

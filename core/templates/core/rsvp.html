@@ -17,6 +17,8 @@
 <main class="wrap">
 
   {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
+  {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
+  {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
   {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
   {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
 
@@ -100,6 +102,50 @@
   <section class="cal">
     <a class="btn" href="{% url 'rsvp-ics' invitation.token %}">📥 Download .ics</a>
     <a class="btn" href="{{ google_url }}" target="_blank" rel="noopener">🗓️ Google Calendar</a>
+  </section>
+  {% endif %}
+
+  {% if not cancelled and not past %}
+  <section class="card channel">
+    <details {% if channel_error %}open{% endif %}>
+      <summary>Prefer updates a different way? <span class="opt">(WhatsApp, Messenger or email)</span></summary>
+      {% if channel_pending %}
+      <p class="sub">You already have a request waiting for {{ event.host_display|default:"your host" }} to confirm — sending another replaces it.</p>
+      {% endif %}
+      <form method="post" action="{% url 'rsvp-channel' invitation.token %}">
+        {% csrf_token %}
+        {% if household %}
+        <label class="field">Who is this for?
+          <select name="member">
+            {% for attendee in attendees %}
+            <option value="{{ attendee.contact.pk }}">{{ attendee.contact.greeting_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label class="field">Reach me on
+          <select name="kind" id="channel-kind">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="messenger">Messenger</option>
+            <option value="email">Email</option>
+          </select>
+        </label>
+        <label class="field" id="channel-value-field">Number / address
+          <input type="text" name="value" placeholder="e.g. 021 555 0123">
+        </label>
+        <button class="save" type="submit">Request the change</button>
+      </form>
+      <script>
+        // Messenger needs no address (§6) — hide the field when it's picked.
+        const kindSel = document.getElementById("channel-kind");
+        const valField = document.getElementById("channel-value-field");
+        const valInput = valField.querySelector("input");
+        kindSel.addEventListener("change", () => {
+          valField.style.display = kindSel.value === "messenger" ? "none" : "";
+          valInput.placeholder = kindSel.value === "email" ? "e.g. you@example.com" : "e.g. 021 555 0123";
+        });
+      </script>
+    </details>
   </section>
   {% endif %}
 

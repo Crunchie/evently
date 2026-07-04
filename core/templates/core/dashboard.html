@@ -13,9 +13,41 @@
     · <a href="{% url 'event-send' event.pk %}"><strong>✉️ send &amp; notify</strong></a></p>
 
   {% if result %}
-  <div class="banner {% if result.failed != '0' %}bad{% else %}ok{% endif %}">
-    {{ result.did|capfirst }}: {{ result.sent }} sent{% if result.failed != '0' %} · {{ result.failed }} failed{% endif %}{% if result.skipped != '0' %} · {{ result.skipped }} skipped (no email){% endif %}
+  <div class="banner {% if result.failed and result.failed != '0' %}bad{% else %}ok{% endif %}">
+    {% if result.msg %}{{ result.did|capfirst }}: {{ result.msg }}{% else %}
+    {{ result.did|capfirst }}: {{ result.sent }} sent{% if result.failed != '0' %} · {{ result.failed }} failed{% endif %}{% if result.skipped != '0' %} · {{ result.skipped }} skipped (no email — use the <a href="{% url 'event-queue' event.pk %}">send queue</a>){% endif %}
+    {% endif %}
   </div>
+  {% endif %}
+
+  {% if reminder_due %}
+  <div class="banner muted reminder">
+    ⏰ <strong>{{ event.title }} is nearly here.</strong> Send a day-before reminder to everyone Going / Maybe?
+    <form method="post" action="{% url 'event-send' event.pk %}">
+      {% csrf_token %}<input type="hidden" name="action" value="reminder">
+      <button class="save">Send reminder</button>
+    </form>
+    <a class="qlink" href="{% url 'event-queue' event.pk %}?kind=reminder">+ assisted queue →</a>
+  </div>
+  {% endif %}
+
+  {% if pending_channels %}
+  <section class="card approvals">
+    <h2>🔁 Channel-change requests</h2>
+    {% for ch in pending_channels %}
+    <div class="approval">
+      <div class="a-what">
+        <strong>{{ ch.contact.name }}</strong> → {{ ch.get_kind_display }}{% if ch.value %} · <code>{{ ch.value }}</code>{% endif %}
+        <span class="tinier">requested {{ ch.created_at|timesince }} ago{% if ch.requested_via %} via {{ ch.requested_via.event.title }}{% endif %}</span>
+      </div>
+      <form method="post" action="{% url 'channel-request-action' ch.pk %}">
+        {% csrf_token %}<input type="hidden" name="event" value="{{ event.pk }}">
+        <button class="mini-btn ok" name="action" value="approve">Approve</button>
+        <button class="mini-btn" name="action" value="reject">Reject</button>
+      </form>
+    </div>
+    {% endfor %}
+  </section>
   {% endif %}
 
   <section class="stats">
@@ -29,13 +61,19 @@
 
   <table class="guests">
     <thead>
-      <tr><th>Guest</th><th>Invite state</th><th>RSVP</th><th>+1</th><th>Note</th><th>Link</th></tr>
+      <tr><th>Guest</th><th>Invite state</th><th>RSVP</th><th>+1</th><th>Note</th><th>Link &amp; actions</th></tr>
     </thead>
     <tbody>
       {% for inv in invitations %}
-      <tr>
-        <td class="name">{{ inv.household.name|default:inv.contact.name }}</td>
-        <td><span class="badge st-{{ inv.state }}">{{ inv.get_state_display }}</span></td>
+      <tr {% if inv.state == "revoked" %}class="revoked"{% endif %}>
+        <td class="name">{{ inv.display_name }}
+          <div class="tinier">
+            {% if inv.route_email %}✉ email{% endif %}{% if inv.route_email and inv.route_assisted %} + {% endif %}{% if inv.route_assisted %}💬 assisted{% endif %}{% if not inv.route_email and not inv.route_assisted %}⚠ no channel{% endif %}
+            {% if inv.last_contacted %}· contacted {{ inv.last_contacted|timesince }} ago{% endif %}
+          </div>
+        </td>
+        <td><span class="badge st-{{ inv.state }}">{{ inv.get_state_display }}</span>
+          {% if inv.opened_at %}<div class="tinier">opened {{ inv.opened_at|timesince }} ago</div>{% endif %}</td>
         <td>
           {% for attendee in inv.attendees.all %}
           <div class="mini">{{ attendee.contact.greeting_name }}
@@ -44,7 +82,48 @@
         </td>
         <td>{{ inv.plus_ones|default:"—" }}</td>
         <td class="note">{{ inv.latest_note|truncatechars:60 }}</td>
-        <td class="link"><input type="text" readonly value="{{ inv.rsvp_url }}" onclick="this.select()"></td>
+        <td class="link">
+          <input type="text" readonly value="{{ inv.rsvp_url }}" onclick="this.select()">
+          {% if inv.state != "revoked" %}
+          <div class="row-actions">
+            <form method="post" action="{% url 'invitation-action' inv.pk %}">
+              {% csrf_token %}
+              {% if inv.route_email %}
+              <button class="mini-btn" name="action" value="resend">Resend</button>
+              <button class="mini-btn" name="action" value="nudge">Nudge</button>
+              {% endif %}
+              <button class="mini-btn" name="action" value="regenerate"
+                onclick="return confirm('Generate a new link? The old one stops working.')">New link</button>
+              <button class="mini-btn danger" name="action" value="revoke"
+                onclick="return confirm('Uninvite? Their link goes dead (quietly).')">Uninvite</button>
+            </form>
+            <details class="override">
+              <summary>Set RSVP for them</summary>
+              <form method="post" action="{% url 'invitation-override' inv.pk %}">
+                {% csrf_token %}
+                {% for attendee in inv.attendees.all %}
+                <label class="ov-row">{{ attendee.contact.greeting_name }}
+                  <select name="status_{{ attendee.pk }}">
+                    <option value="">— leave —</option>
+                    <option value="going">Going</option>
+                    <option value="maybe">Maybe</option>
+                    <option value="cant">Can't</option>
+                    <option value="no_reply">No reply</option>
+                  </select>
+                </label>
+                {% endfor %}
+                {% if event.allow_plus_ones %}
+                <label class="ov-row">plus-ones
+                  <input type="number" name="plus_ones" min="0" value="{{ inv.plus_ones }}"></label>
+                {% endif %}
+                <label class="ov-row">note
+                  <input type="text" name="note" maxlength="500" value="{{ inv.latest_note }}"></label>
+                <button class="mini-btn ok">Save (as organizer)</button>
+              </form>
+            </details>
+          </div>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
       <tr><td colspan="6" class="empty">No invitations yet — add guests via the
@@ -52,6 +131,31 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <div class="row2 streams">
+    <section class="card">
+      <h2>📝 Notes from guests</h2>
+      {% for inv in notes %}
+      <div class="stream-item">
+        <strong>{{ inv.display_name }}</strong>
+        <span class="tinier">{{ inv.latest_note_at|timesince }} ago</span>
+        <div>{{ inv.latest_note }}</div>
+      </div>
+      {% empty %}<p class="sub">Nothing yet — notes land here as guests reply.</p>{% endfor %}
+    </section>
+
+    <section class="card">
+      <h2>🕓 Response history</h2>
+      {% for ev in history %}
+      <div class="stream-item">
+        <strong>{{ ev.attendee.contact.greeting_name }}</strong>
+        → <span class="s-{{ ev.status }}">{{ ev.get_status_display }}</span>
+        <span class="tinier">{{ ev.created_at|timesince }} ago ·
+          {% if ev.actor == "organizer" %}by {{ ev.actor_user.username|default:"organizer" }}{% else %}by guest{% endif %}</span>
+      </div>
+      {% empty %}<p class="sub">No responses yet.</p>{% endfor %}
+    </section>
+  </div>
 
 </main>
 {% endblock %}

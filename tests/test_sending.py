@@ -61,7 +61,7 @@ def test_send_invites_flow(staff_client, event, fake_send):
 
     # review screen shows the breakdown
     content = staff_client.get(send_url(event)).content.decode()
-    assert "Send 1 invite" in content and "Tom" in content
+    assert "Send 1 email invite" in content and "Tom" in content
 
     resp = staff_client.post(send_url(event), {"action": "invites"})
     assert resp.status_code == 302

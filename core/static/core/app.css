@@ -184,9 +184,75 @@ table.guests {
 /* send & notify page */
 body.dash .card h2 { font-size: 1.05rem; font-weight: 800; margin-bottom: .4rem; }
 body.dash .card .sub { color: var(--muted); font-size: .9rem; margin: .2rem 0 .8rem; }
-body.dash .card .sub.warn { color: var(--maybe); }
+body.dash .card .sub.warn, body.dash .card .warn { color: var(--maybe); }
 body.dash .card .save { width: auto; padding: .6rem 1.1rem; margin-top: 0; font-size: .9rem; }
 body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
 .card.danger { border: 1.5px solid #fecaca; }
 .card.danger .save { background: #dc2626; }
 .card.danger .save:hover { background: #b91c1c; }
+.actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.actions .btn, .qlink { flex: 0 0 auto; font-size: .9rem; padding: .55rem 1rem; }
+
+/* ---------- send queue (assisted channels, §6) ---------- */
+.queue-card .q-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.q-name { font-size: 1.2rem; font-weight: 800; }
+.q-via { color: var(--muted); font-size: .9rem; margin-top: .15rem; }
+.q-last { color: var(--maybe); font-size: .8rem; margin-top: .3rem; }
+.q-preview {
+  white-space: pre-wrap; word-break: break-word; font: inherit; font-size: .88rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  padding: .8rem .9rem; margin: 1rem 0; color: #3a3a3d;
+}
+.q-actions { display: flex; gap: .6rem; margin-bottom: .3rem; }
+.q-actions .btn { cursor: pointer; font: inherit; font-weight: 700; }
+.q-primary { border-color: var(--coral); color: var(--coral); }
+.q-skip { text-align: center; margin-top: .8rem; }
+.linkish {
+  background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
+  cursor: pointer; text-decoration: underline;
+}
+
+/* ---------- dashboard extras (Phase 6) ---------- */
+.banner.reminder { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap; }
+.banner.reminder .save { width: auto; margin: 0; padding: .5rem 1rem; font-size: .88rem; }
+.approvals .approval {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: .55rem 0; border-top: 1px solid var(--line);
+}
+.approvals .approval:first-of-type { border-top: none; }
+.a-what code { font-size: .85em; background: var(--bg); padding: .1rem .4rem; border-radius: 6px; }
+.tinier { display: inline-block; color: var(--muted); font-size: .75rem; font-weight: 400; }
+.mini-btn {
+  font: inherit; font-size: .78rem; font-weight: 600; padding: .3rem .65rem;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer;
+  color: var(--ink); white-space: nowrap;
+}
+.mini-btn:hover { border-color: #c9c9cf; }
+.mini-btn.ok { border-color: #bbf7d0; color: var(--going); }
+.mini-btn.danger { border-color: #fecaca; color: var(--cant); }
+.row-actions { margin-top: .4rem; display: flex; flex-direction: column; gap: .35rem; }
+.row-actions form { display: flex; gap: .3rem; flex-wrap: wrap; }
+.guests tr.revoked td { opacity: .45; }
+.override summary { font-size: .78rem; color: var(--coral); cursor: pointer; font-weight: 600; }
+.override form { margin-top: .4rem; display: flex; flex-direction: column; gap: .3rem; }
+.ov-row { display: flex; justify-content: space-between; gap: .5rem; align-items: center; font-size: .8rem; }
+.ov-row select, .ov-row input { font: inherit; font-size: .8rem; padding: .25rem .4rem;
+  border: 1px solid var(--line); border-radius: 8px; max-width: 9rem; }
+.streams { margin-top: 1.5rem; align-items: start; }
+.streams h2 { font-size: 1rem; font-weight: 800; margin-bottom: .6rem; }
+.stream-item { padding: .5rem 0; border-top: 1px solid var(--line); font-size: .88rem; }
+.stream-item:first-of-type { border-top: none; }
+
+/* guest channel-change card */
+.channel summary { font-weight: 700; font-size: .95rem; cursor: pointer; }
+.channel summary .opt { color: var(--muted); font-weight: 400; font-size: .85rem; }
+.channel form { margin-top: .6rem; }
+.field select {
+  display: block; width: 100%; margin-top: .35rem; padding: .6rem .7rem;
+  border: 1.5px solid var(--line); border-radius: 12px; font: inherit; color: var(--ink);
+  background: #fff;
+}
+.field input[type="text"] {
+  display: block; width: 100%; margin-top: .35rem; padding: .6rem .7rem;
+  border: 1.5px solid var(--line); border-radius: 12px; font: inherit; color: var(--ink);
+}

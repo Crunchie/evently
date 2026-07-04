@@ -29,6 +29,10 @@ RESEND_WEBHOOK_SECRET = os.environ.get("RESEND_WEBHOOK_SECRET", "")  # Svix sign
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "")  # e.g. "Sam & Kate <invites@yourdomain>"
 EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", "")  # personal inbox for real replies
 
+# Default region for parsing loosely-entered phone numbers into E.164 wa.me links
+# (§6) — "021 555 0123" needs to know it's a NZ number.
+PHONE_REGION = os.environ.get("PHONE_REGION", "NZ")
+
 # Cloudflare Access — organizer auth at the edge (§8, CLOUDFLARE_SETUP.md §3).
 # Both unset in local dev → the middleware is inert and normal Django login applies.
 CF_ACCESS_TEAM_DOMAIN = os.environ.get("CF_ACCESS_TEAM_DOMAIN", "")  # team.cloudflareaccess.com

@@ -10,7 +10,7 @@ from django.utils.html import escape
 
 from .models import Invitation
 
-KINDS = ("invite", "nudge", "update", "cancellation")
+KINDS = ("invite", "nudge", "update", "cancellation", "reminder")
 
 
 def _when(event) -> str:
@@ -54,6 +54,14 @@ def _subject_and_text(kind: str, invitation: Invitation, url: str) -> tuple[str,
             f"Sorry — {event.title} ({when}) has been cancelled.\n\n"
             f"Details:\n{url}"
         )
+    elif kind == "reminder":
+        subject = f"See you soon — {event.title}"
+        text = (
+            f"Hi {greeting},\n\n"
+            f"A quick reminder: {event.title} is coming up — {when}, {where}. "
+            f"Looking forward to seeing you!\n\n"
+            f"Details (or update your RSVP):\n{url}"
+        )
     else:  # pragma: no cover — programming error, not user input
         raise ValueError(f"unknown message kind: {kind}")
     return subject, text
@@ -80,3 +88,11 @@ def build_message(kind: str, invitation: Invitation, url: str) -> dict:
     subject, text = _subject_and_text(kind, invitation, url)
     button = {"invite": "Open your invite", "nudge": "Reply now"}.get(kind, "See details")
     return {"subject": subject, "text": text, "html": _html(text, url, button)}
+
+
+def share_payload(kind: str, invitation: Invitation, url: str) -> dict:
+    """The assisted-channel payload (§6): `text` for clipboard / wa.me (link
+    included), plus `share_text` + `url` for `navigator.share`, which appends the
+    URL itself — passing both would double the link in some targets."""
+    text = _subject_and_text(kind, invitation, url)[1]
+    return {"text": text, "share_text": text.replace(url, "").rstrip(), "url": url}

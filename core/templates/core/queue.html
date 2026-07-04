@@ -1,0 +1,90 @@
+{% extends "core/base.html" %}
+{% block title %}Send queue — {{ event.title }}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap">
+
+  <p class="crumbs"><a href="{% url 'event-send' event.pk %}">← send &amp; notify</a></p>
+  <h1>Send queue <span class="badge">{{ kind }}</span></h1>
+  <p class="meta">{{ event.title }} ·
+    {% if total %}{{ n|add:1 }} of {{ total }}{% else %}nothing to share{% endif %}</p>
+
+  {% if item %}
+  <section class="card rsvp queue-card">
+    <div class="q-head">
+      <div>
+        <div class="q-name">{{ item.invitation.display_name }}</div>
+        <div class="q-via">via <strong>{{ item.channel.get_kind_display }}</strong>
+          {% if item.channel.value %}· {{ item.channel.value }}{% endif %}
+          {% if item.channel.contact_id != item.invitation.contact_id %}· for {{ item.channel.contact.greeting_name }}{% endif %}</div>
+        {% if item.last_contacted %}<div class="q-last">last contacted {{ item.last_contacted|timesince }} ago</div>{% endif %}
+      </div>
+      <span class="badge st-{{ item.invitation.state }}">{{ item.invitation.get_state_display }}</span>
+    </div>
+
+    <pre class="q-preview">{{ item.payload.text }}</pre>
+
+    {# Marking shared is optimistic (§6): the guest's link click is the real signal. #}
+    <form method="post" id="shared-form">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <input type="hidden" name="n" value="{{ n }}">
+      <input type="hidden" name="invitation" value="{{ item.invitation.pk }}">
+      <input type="hidden" name="channel" value="{{ item.channel.pk }}">
+      <input type="hidden" name="action" value="shared">
+
+      <div class="q-actions">
+        {% if item.wa_url %}
+        <a class="btn q-primary" href="{{ item.wa_url }}" target="_blank" rel="noopener"
+           onclick="setTimeout(() => document.getElementById('shared-form').submit(), 300)">
+          Open WhatsApp ↗</a>
+        {% else %}
+        <button class="btn q-primary" type="button" id="share-btn"
+                data-text="{{ item.payload.share_text }}" data-url="{{ item.payload.url }}">
+          Share… (Messenger)</button>
+        {% endif %}
+        <button class="btn" type="button" id="copy-btn" data-text="{{ item.payload.text }}">
+          Copy invite</button>
+      </div>
+      <button class="save" type="submit">Mark shared &amp; next →</button>
+    </form>
+    <form method="post" class="q-skip">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <input type="hidden" name="n" value="{{ n }}">
+      <input type="hidden" name="invitation" value="{{ item.invitation.pk }}">
+      <input type="hidden" name="channel" value="{{ item.channel.pk }}">
+      <button class="linkish" name="action" value="skip">Skip for now</button>
+    </form>
+  </section>
+
+  <script>
+    const sharedForm = document.getElementById("shared-form");
+    const shareBtn = document.getElementById("share-btn");
+    if (shareBtn) {
+      if (!navigator.share) shareBtn.textContent = "Copy for Messenger";
+      shareBtn.addEventListener("click", async () => {
+        const { text, url } = shareBtn.dataset;
+        try {
+          if (navigator.share) await navigator.share({ text, url });
+          else await navigator.clipboard.writeText(text + "\n" + url);
+          sharedForm.submit();
+        } catch (err) { /* share sheet dismissed — stay put */ }
+      });
+    }
+    document.getElementById("copy-btn").addEventListener("click", async (e) => {
+      await navigator.clipboard.writeText(e.target.dataset.text);
+      e.target.textContent = "Copied ✓";
+    });
+  </script>
+
+  {% else %}
+  <section class="card center">
+    <h1>🎉</h1>
+    <p><strong>Queue done.</strong>{% if total %} Everything left was skipped — revisit any time.{% else %} No one is waiting on an assisted share.{% endif %}</p>
+    <p class="sub"><a href="{% url 'event-dashboard' event.pk %}">Back to the dashboard →</a></p>
+  </section>
+  {% endif %}
+
+</main>
+{% endblock %}

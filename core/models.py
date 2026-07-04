@@ -311,6 +311,13 @@ class Invitation(TimestampedModel):
         """Who the RSVP page says hello to: the household, or the person (§2.5)."""
         return self.household.name if self.household_id else self.contact.greeting_name
 
+    @property
+    def display_name(self) -> str:
+        """Organizer-facing row label. NB: templates must use this, not
+        `household.name|default:contact.name` — Django resolves filter *arguments*
+        eagerly, and `contact.name` raises on household envelopes (contact is None)."""
+        return self.household.name if self.household_id else self.contact.name
+
     def save(self, *args, **kwargs):
         creating = self._state.adding
         super().save(*args, **kwargs)
