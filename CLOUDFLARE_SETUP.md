@@ -142,7 +142,8 @@ Back in Resend, hit **Verify**; wait for all green. Then add a DMARC record manu
 (Resend may not require it, inboxes like it):
 
 - **TXT** `_dmarc` → `v=DMARC1; p=none; rua=mailto:mcardlesam@gmail.com`
-  (`p=none` = monitor-only; tighten to `quarantine` later if you care.)
+  (`p=none` = monitor-only; tighten to `quarantine` later if you care.)  
+  This was done in cloudfare DNS settings, add a TXT record
 
 Also in Resend: create an **API key** → **`RESEND_API_KEY`** in `.env`. In Phase 4
 you'll also add a **Webhook** (Resend → Webhooks) pointing at
@@ -163,12 +164,17 @@ you'll also add a **Webhook** (Resend → Webhooks) pointing at
 
 ## 7. Verification checklist
 
-After `docker compose up` on the VM:
+After `docker compose up -d --build` on the VM (**always `--build`** — a plain
+restart re-runs the old image; that's what caused the 2026-07-04 "admin 502 /
+ungated" confusion):
 
-- [ ] Zero Trust → Tunnels shows `evently` **HEALTHY**.
-- [ ] `https://<HOST>/healthz` → `{"status": "ok"}` (public, no login).
-- [ ] `https://<HOST>/admin` → Cloudflare Access login page appears **before** any
-      Django page.
+- [x] Zero Trust → Tunnels shows `evently` **HEALTHY**. *(verified 2026-07-04)*
+- [x] `https://<HOST>/healthz` → `{"status": "ok"}` (public, no login). *(verified)*
+- [x] `https://<HOST>/admin` → Cloudflare Access login page appears **before** any
+      Django page. *(verified: 302 → `samandmon.cloudflareaccess.com` login)*
+- [x] App-layer check: a request to `/admin` **without** the Access JWT → **403**
+      from the middleware, and the JWKS endpoint is fetchable from the container.
+      *(verified in-container 2026-07-04)*
 - [ ] One-time PIN with an allow-listed email → gets through; a non-listed email →
       denied at the edge.
 - [ ] From the LAN: `curl http://<vm-ip>:8000/healthz` **fails** (no published ports —
@@ -177,19 +183,24 @@ After `docker compose up` on the VM:
       -w "%{http_code}\n" https://<HOST>/i/junk; done`) → turns into **429**s.
 - [ ] (Phase 4) Resend domain shows **Verified**; a test email lands from
       `invites@<yourdomain>` with your Reply-To.
+- [ ] (Phase 4) Resend **webhook** created → `https://<HOST>/webhooks/resend`, signing
+      secret in `.env` as `RESEND_WEBHOOK_SECRET` → `docker compose up -d`. **Currently
+      unset** — bounces are rejected (fail-closed) until this is done.
 
 ## 8. Record of what was actually configured (fill in as you go)
 
 | Item | Value |
 |---|---|
 | Domain | `samandmonevents.party` (bought 2026-07-04) |
-| Registrar | |
+| Registrar | cloudfare |
 | `<HOST>` (public hostname) | `samandmonevents.party` (apex — update `.env` `ALLOWED_HOSTS` if you pick a subdomain instead) |
 | Tunnel name / ID | `evently` / `01e938d8-a007-4541-8dfe-0875b29f28ee` |
-| Zero Trust team domain | |
-| Access application + AUD tag | `evently admin` / |
+| Zero Trust team domain | `samandmon.cloudflareaccess.com` |
+| Access application + AUD tag | `evently admin` / `6d9323ca7011b68e18544eec23279859af9e13e2619ded1520c46f5ad42500ba` |
 | Allow-listed emails | |
 | Access session duration | |
 | Rate-limit rule (path/rate/action) | `/i/` / 30 per 10s / block |
-| Resend domain verified on | |
+| Resend domain verified on | (API key in `.env` is send-only restricted — status not queryable; confirm in dashboard) |
+| Resend webhook + secret | **not yet configured** — see §7 last item |
+| Email From / Reply-To | `Sam & Mon <invites@samandmonevents.party>` / personal inbox |
 | DMARC policy | `p=none` |

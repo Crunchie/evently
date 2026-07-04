@@ -35,7 +35,7 @@ uv run python manage.py migrate
 uv run python manage.py createsuperuser   # local organizer account (dev)
 uv run pytest                             # tests
 uv run ruff check . && uv run ruff format # lint/format
-docker compose up --build                 # full stack (app+cloudflared+litestream)
+docker compose up -d --build              # deploy: ALWAYS --build (plain restart runs the old image)
 ```
 
 ## Project layout
@@ -250,20 +250,47 @@ invitation through the ladder (an open can't be regressed). Env: `RESEND_WEBHOOK
   webhooks rejected, valid bounce flips state without regressing opens. **Remaining ops
   (needs the real domain):** verify domain in Resend, send a real invite to yourself,
   configure the webhook + secret (CLOUDFLARE_SETUP.md §5).
+- **Ops status (2026-07-04):** domain + tunnel + Access live and verified end-to-end
+  (healthz 200 through the tunnel; `/admin` → Access login at the edge; JWT-less request
+  to the app → 403; JWKS reachable from the container). Resend API key in `.env`
+  (send-only restricted key — good). **Still to do:** create the Resend webhook →
+  `RESEND_WEBHOOK_SECRET` in `.env`, and send one real test invite. ⚠️ Deploy lesson:
+  the VM ran a **stale image** for half a day (built pre-Phase-2 → admin ungated at the
+  app layer) — deploys must be `docker compose up -d --build`, never plain `up -d` or
+  `restart`, and tests are now immune to the production `.env` via
+  `config/settings_test.py`.
 
-### Phase 5 — Assisted channels + send queue ⬜
-Messenger via `navigator.share`; WhatsApp via `wa.me/<E.164>?text=` (phones normalised with
-`phonenumbers`); the **send-queue** UI (share → next), optimistic "shared" state, desktop
-"copy invite" fallback (§6). Delivery tracking; first link-click is the real signal.
-- **Gate:** on a phone, walk the send queue for a few contacts across Messenger + WhatsApp;
-  links carry the token; states advance shared→opened→responded.
+### Phase 5 — Assisted channels + send queue ✅
+`core/channels.py` grew **routing** (§2.2: a person goes out on their preferred active
+channel; else email > WhatsApp > Messenger; SMS/Telegram never route — no transport yet)
+plus `assisted_channels`/`wa_link` (phonenumbers → E.164, `PHONE_REGION` env, default NZ).
+**Send queue** at `/admin/events/<pk>/queue/?kind=invite|nudge|update|cancellation|reminder`
+— one card per (envelope, assisted channel): WhatsApp deep link / `navigator.share` for
+Messenger / copy fallback, each marking an optimistic SHARED Delivery + advancing the
+ladder; skip steps over. A household with two WhatsApp parents stays queued until *each*
+copy went out (per-channel SHARED pairs). Send review screen now shows the email/assisted/
+no-channel three-way split with queue links per action.
+- **Gate — code+tests passing** (12 new): routing preferences, wa.me normalisation, queue
+  walk/skip/done, two-parent household same-link, mixed household split, nudge queue
+  targeting, staff-gating. **Remaining:** walk it once on a real phone (share sheet +
+  wa.me hand-off are browser-level, untestable from pytest).
 
-### Phase 6 — Dashboard, reminders, approvals, overrides ⬜
-Full dashboard (§2.6, mockup): headcount, per-guest table with household expansion, notes
-stream, response history, **pending channel-change approvals** (§2.5), **organizer RSVP
-override** (§2.3, `actor=organizer`), day-before reminder prompt (§2.4).
-- **Gate:** run a complete organizer workflow on a test event: invite, chase, approve a
-  channel change, override an RSVP, send a reminder.
+### Phase 6 — Dashboard, reminders, approvals, overrides ✅
+Dashboard now has: channel-change **approval queue** (approve = ACTIVE + preferred swap,
+reject = delete; guest requests via a new form on the RSVP page → `PROPOSED` channel,
+validated: email syntax / phone → E.164 / Messenger addressless; newer request replaces
+older), **organizer RSVP override** per envelope (all members in one action, can reset to
+no-reply, history `actor=organizer` + `actor_user`, guest can still overwrite later),
+row actions (**resend / nudge-one / new link / uninvite**), per-guest routing + last-
+contacted timestamps (§2.4 anti-spam), **notes stream**, **response history** (last 30),
+and a **day-before reminder** prompt (≤48 h out) driving a new `reminder` message kind
+targeting Going/Maybe. Fixed latent template bug: `household.name|default:contact.name`
+raises on household rows (Django resolves filter args eagerly) → `Invitation.display_name`.
+- **Gate — code+tests passing** (14 new): override actors/history/no-reply reset, revoke →
+  410 no-leak, token rotation kills old link, single-guest resend/nudge isolation, request
+  validation + member targeting + replacement, approve/reject flow + preferred swap,
+  reminder targeting, dashboard streams render. **Remaining:** one full organizer
+  workflow on the live instance (invite → chase → approve → override → remind).
 
 ### Phase 7 — PWA + security pass + production deploy ⬜
 PWA manifest + service worker (§7). Security pass (§8): CSP, `Referrer-Policy: no-referrer`
@@ -284,7 +311,8 @@ only on demand.
 ---
 
 ## Open decisions still needed
-- [ ] **Domain name** — blocks Resend DNS (SPF/DKIM/DMARC) and the tunnel hostname (§9).
+- [x] **Domain name** — `samandmonevents.party`, bought 2026-07-04 via Cloudflare
+      Registrar (see CLOUDFLARE_SETUP.md §8).
 - [ ] **Confirm §2 defaults** — plus-ones on, show-guest-list off, no RSVP cutoff, silent
       uninvite, cover images deferred, household RSVP editable by any link-holder,
       `birth_year` field for kids kept or dropped.
