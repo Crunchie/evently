@@ -5,6 +5,7 @@ import hmac
 import json
 import time
 from datetime import timedelta
+from urllib.parse import urlencode
 
 import phonenumbers
 from django.conf import settings
@@ -121,11 +122,14 @@ def rsvp_page(request, token):
     attendees = list(invitation.attendees.all())
     going_names = []
     if event.show_guest_list:
+        # Uninvited (revoked) guests never appear, whatever their last answer was.
         going_names = [
             a.contact.greeting_name
             for a in InvitationAttendee.objects.filter(
                 invitation__event=event, rsvp_status=InvitationAttendee.Rsvp.GOING
-            ).select_related("contact")
+            )
+            .exclude(invitation__state=Invitation.State.REVOKED)
+            .select_related("contact")
         ]
 
     context = {
@@ -165,6 +169,9 @@ def _apply_rsvp(
     """
     event = invitation.event
     now = timezone.now()
+    # Only a form that actually carries the field can change the note — a POST
+    # without it must not silently wipe what the guest wrote.
+    note_submitted = "note" in request.POST
     note = request.POST.get("note", "").strip()[:MAX_NOTE_LEN]
 
     for attendee in invitation.attendees.all():
@@ -188,7 +195,7 @@ def _apply_rsvp(
             requested = invitation.plus_ones
         invitation.plus_ones = max(0, min(requested, event.plus_ones_cap or MAX_PLUS_ONES))
 
-    if note != invitation.latest_note:
+    if note_submitted and note != invitation.latest_note:
         invitation.latest_note = note
         invitation.latest_note_at = now
     invitation.save(update_fields=["plus_ones", "latest_note", "latest_note_at", "updated_at"])
@@ -294,7 +301,11 @@ def event_dashboard(request, pk):
         inv.route_email = bool(email_channels(inv))
         inv.route_assisted = bool(assisted_channels(inv))
 
-    attendee_qs = InvitationAttendee.objects.filter(invitation__event=event)
+    # Revoked envelopes stay visible in the table (greyed) but are out of every
+    # count — uninvited guests aren't catered for (§2.2).
+    attendee_qs = InvitationAttendee.objects.filter(invitation__event=event).exclude(
+        invitation__state=Invitation.State.REVOKED
+    )
     by_status = {
         row["rsvp_status"]: row["n"]
         for row in attendee_qs.values("rsvp_status").annotate(n=Count("id"))
@@ -313,12 +324,18 @@ def event_dashboard(request, pk):
         "cant": by_status.get(InvitationAttendee.Rsvp.CANT, 0),
         "no_reply": by_status.get(InvitationAttendee.Rsvp.NO_REPLY, 0),
         "invited": attendee_qs.count(),
-        "opened": event.invitations.filter(opened_at__isnull=False).count(),
+        "opened": event.invitations.exclude(state=Invitation.State.REVOKED)
+        .filter(opened_at__isnull=False)
+        .count(),
         "expected": event.expected_headcount,
         "pending_channels": ContactChannel.objects.filter(status=ContactChannel.Status.PROPOSED)
         .select_related("contact", "requested_via__event")
         .order_by("created_at"),
-        "notes": [i for i in invitations if i.latest_note],
+        "notes": sorted(
+            (i for i in invitations if i.latest_note),
+            key=lambda i: i.latest_note_at or i.updated_at,
+            reverse=True,
+        ),
         "history": RsvpEvent.objects.filter(attendee__invitation__event=event).select_related(
             "attendee__contact", "actor_user"
         )[:30],
@@ -417,6 +434,14 @@ def event_queue(request, pk):
         action = request.POST.get("action", "")
         invitation = get_object_or_404(Invitation, pk=request.POST.get("invitation"), event=event)
         channel = get_object_or_404(ContactChannel, pk=request.POST.get("channel"))
+        # Integrity: the channel must belong to someone this envelope covers.
+        covered = (
+            {invitation.contact_id}
+            if invitation.contact_id
+            else set(invitation.household.members.values_list("id", flat=True))
+        )
+        if channel.contact_id not in covered:
+            return HttpResponseForbidden("Channel does not belong to this invitation")
         if action == "shared":
             Delivery.objects.create(
                 invitation=invitation,
@@ -466,8 +491,9 @@ def event_queue(request, pk):
 #  dashboard with a banner.
 # --------------------------------------------------------------------------- #
 def _dash(event_pk, did, **params):
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return redirect(f"{reverse('event-dashboard', args=[event_pk])}?did={did}&{query}")
+    # Values include free text (contact names, messages) — always URL-encode.
+    query = urlencode({"did": did, **params})
+    return redirect(f"{reverse('event-dashboard', args=[event_pk])}?{query}")
 
 
 @staff_member_required
@@ -516,7 +542,17 @@ def channel_request_action(request, pk):
     it the contact's preferred channel — future sends follow it."""
     channel = get_object_or_404(ContactChannel, pk=pk, status=ContactChannel.Status.PROPOSED)
     action = request.POST.get("action", "")
-    event_pk = request.POST.get("event", "")
+    # The event pk only routes the redirect — but reverse() 500s on garbage, so
+    # resolve it properly (falls back to the requesting invitation's event).
+    try:
+        event = Event.objects.filter(pk=int(request.POST.get("event", ""))).first()
+    except (TypeError, ValueError):
+        event = None
+    if event is None and channel.requested_via_id:
+        event = channel.requested_via.event
+    if event is None:
+        return HttpResponseForbidden("Unknown event")
+    event_pk = event.pk
     if action == "approve":
         with transaction.atomic():
             channel.contact.channels.filter(is_preferred=True).exclude(pk=channel.pk).update(

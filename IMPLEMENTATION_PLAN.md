@@ -339,3 +339,56 @@ only on demand.
 - **Compose adds `cloudflared` + `litestream`**; app exposes no host ports.
 - Same everywhere else: uv workflow, `package = false`, single-stage uv Dockerfile,
   non-root, `./data` bind mount, `.env` pattern, `uv run pytest`.
+
+---
+
+## What's left (single source of truth, 2026-07-05)
+
+All application code through Phase 7 is **built, tested (95 green), and deployed** to
+the VM. Everything below is either a dashboard/phone action only the organizer can do,
+or on-demand future work. Ordered: do the ⚠️ items before inviting anyone real.
+
+### Cloudflare dashboard
+- [ ] ⚠️ **Fix the WAF rate-limit rule** — verified NOT firing (150 hits on `/i/junk`,
+      zero 429s). Check it exists on the zone, is *deployed* (not draft), and matches
+      *URI Path starts with `/i/`*. Re-test per CLOUDFLARE_SETUP.md §4.
+- [ ] **R2 bucket for backups** — create private `evently-backups` + scoped token,
+      fill `LITESTREAM_*` in `.env`, uncomment the s3 block in `litestream.yml`,
+      `docker compose up -d --build`, then re-run the restore drill against R2
+      (steps: CLOUDFLARE_SETUP.md §5b; the file-replica drill already passed).
+- [ ] Fill the two blank rows in the CLOUDFLARE_SETUP.md §8 record table
+      (allow-listed emails; Access session duration).
+
+### Resend dashboard
+- [ ] ⚠️ **Create the bounce webhook** → `https://samandmonevents.party/webhooks/resend`,
+      copy its signing secret into `.env` as `RESEND_WEBHOOK_SECRET`, redeploy.
+      Until then bounces are rejected fail-closed (invisible, not broken).
+- [ ] Confirm the domain shows **Verified** (the app's API key is send-only, so this
+      can't be checked from here), then **send yourself a real test invite** from the
+      send screen and check DKIM/SPF pass headers in Gmail (`Show original`).
+
+### Hands-on verification (phone + a second human)
+- [ ] Log in to `https://samandmonevents.party/admin` via Access one-time PIN;
+      have the co-host do the same; confirm a non-listed email is denied.
+- [ ] From the LAN: `curl http://<vm-ip>:8000/healthz` must FAIL (no published
+      ports — required for the Access-JWT trust model, §8).
+- [ ] On a phone: install the PWA (Add to Home Screen), walk the send queue —
+      Messenger share sheet + WhatsApp deep link — and confirm states advance
+      shared → opened → responded.
+- [ ] **The real gate:** run one genuine gathering end-to-end (invite, chase,
+      approve a channel change, override an RSVP, day-before reminder).
+
+### VM housekeeping
+- [ ] Check NTP is enabled (`timedatectl`) — the clock jumped hours on 2026-07-04,
+      which can break Access-JWT validation (`iat`/`exp`) and confused docker logs.
+- [ ] Consider disk encryption on the Proxmox volume holding `./data` (§8 item 5).
+
+### Decisions still open (design doc §11)
+- [ ] Confirm the §2 defaults: plus-ones on, show-guest-list off, no RSVP cutoff,
+      silent uninvite, household RSVP editable by any link-holder, keep/drop
+      `birth_year`.
+
+### Build work — none until wanted (Phase 8, on demand)
+Automated chat spokes (Telegram, then SMS), recurring events (`RECURRENCE-ID`),
+event itinerary field, scheduled auto-reminders (would introduce the first
+worker loop). Build only when a real need shows up.

@@ -205,14 +205,20 @@ class Event(TimestampedModel):
     def expected_headcount(self) -> int:
         """
         The number to cater for (§2.6): every attendee marked Going (individuals AND
-        household members) + plus-ones on envelopes that have at least one Going attendee.
-        Illustrative — the dashboard should compute this via annotations, not per-object.
+        household members) + plus-ones on envelopes that have at least one Going
+        attendee. Revoked envelopes don't count — uninviting someone (§2.2) removes
+        them from the catering number even though their RSVP history is retained.
         """
-        going = InvitationAttendee.objects.filter(
-            invitation__event=self, rsvp_status=InvitationAttendee.Rsvp.GOING
-        ).count()
+        going = (
+            InvitationAttendee.objects.filter(
+                invitation__event=self, rsvp_status=InvitationAttendee.Rsvp.GOING
+            )
+            .exclude(invitation__state=Invitation.State.REVOKED)
+            .count()
+        )
         plus = (
             self.invitations.filter(attendees__rsvp_status=InvitationAttendee.Rsvp.GOING)
+            .exclude(state=Invitation.State.REVOKED)
             .distinct()
             .aggregate(total=Sum("plus_ones"))["total"]
             or 0

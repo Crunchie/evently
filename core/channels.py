@@ -208,6 +208,12 @@ def send_targets(event: Event) -> dict:
     by_state = lambda *states: [i for i in invitations if i.state in states]  # noqa: E731
 
     shared_pairs = shared_channel_pairs(event)
+    # One query, not one per invitation: which envelopes have a failed delivery.
+    failed_ids = set(
+        Delivery.objects.filter(invitation__event=event, status=Delivery.Status.FAILED).values_list(
+            "invitation_id", flat=True
+        )
+    )
 
     def unshared_assisted(invitation):
         return [
@@ -240,10 +246,7 @@ def send_targets(event: Event) -> dict:
         "retryable": [
             i
             for i in invitations
-            if i.state == S.BOUNCED
-            or (
-                i.state == S.PENDING and i.deliveries.filter(status=Delivery.Status.FAILED).exists()
-            )
+            if i.state == S.BOUNCED or (i.state == S.PENDING and i.pk in failed_ids)
         ],
         "non_responders": [i for i in non_responders if email_channels(i)],
         "non_responders_assisted": [i for i in non_responders if assisted_channels(i)],
