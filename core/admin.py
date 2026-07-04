@@ -3,6 +3,8 @@ dashboard + send queue are hand-built later (Phase 6)."""
 
 from django.contrib import admin
 from django.db.models import Count
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .models import (
     Contact,
@@ -92,11 +94,15 @@ class ContactChannelAdmin(admin.ModelAdmin):
 # --- Events / invitations --------------------------------------------------- #
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ("title", "starts_at", "status", "expected_headcount")
+    list_display = ("title", "starts_at", "status", "expected_headcount", "dashboard_link")
     list_filter = ("status",)
     search_fields = ("title",)
     date_hierarchy = "starts_at"
     readonly_fields = ("ics_uid", "created_at", "updated_at")
+
+    @admin.display(description="dashboard")
+    def dashboard_link(self, obj):
+        return format_html('<a href="{}">open ↗</a>', reverse("event-dashboard", args=[obj.pk]))
 
 
 @admin.register(Invitation)

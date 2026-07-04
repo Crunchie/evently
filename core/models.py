@@ -97,6 +97,12 @@ class Contact(TimestampedModel):
         """The active channel used by default when inviting this contact (§2.2)."""
         return self.channels.filter(is_preferred=True, status=ContactChannel.Status.ACTIVE).first()
 
+    @property
+    def greeting_name(self) -> str:
+        """Name used in guest-facing greetings (§2.5): nickname, else first name."""
+        parts = self.name.split()
+        return self.nickname or (parts[0] if parts else self.name)
+
 
 class ContactChannel(TimestampedModel):
     """
@@ -299,6 +305,11 @@ class Invitation(TimestampedModel):
     @property
     def rsvp_path(self) -> str:
         return f"/i/{self.token}"
+
+    @property
+    def greeting(self) -> str:
+        """Who the RSVP page says hello to: the household, or the person (§2.5)."""
+        return self.household.name if self.household_id else self.contact.greeting_name
 
     def save(self, *args, **kwargs):
         creating = self._state.adding

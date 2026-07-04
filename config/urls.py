@@ -1,9 +1,15 @@
 from django.contrib import admin
 from django.urls import path
 
-from core.views import healthz
+from core import views
 
 urlpatterns = [
+    path("healthz", views.healthz, name="healthz"),
+    # Guest side: capability URLs, public (§8).
+    path("i/<str:token>", views.rsvp_page, name="rsvp"),
+    path("i/<str:token>/calendar.ics", views.rsvp_ics, name="rsvp-ics"),
+    # Organizer side: everything under /admin so one Access rule gates it all.
+    # Custom views must be declared before the admin catch-all.
+    path("admin/events/<int:pk>/dashboard/", views.event_dashboard, name="event-dashboard"),
     path("admin/", admin.site.urls),
-    path("healthz", healthz, name="healthz"),
 ]

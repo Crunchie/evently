@@ -218,20 +218,20 @@ warning if that happens in production. Behind-proxy settings were already in pla
   wrong-audience / expired / no-email → 403; guest paths not gated; unconfigured →
   Django login redirect; existing user promoted to organizer. 21 tests green total.
 
-### Phase 3 — Event flow + RSVP page (the core loop, no messaging) ⬜
-The heart of the product, usable by copy-pasting links by hand. Organizer views for
-create/edit(+notify choice)/cancel/clone and the guest-list builder (or lean on admin for
-v1 and build just the dashboard + RSVP page). **Guest RSVP page** at `/i/<token>`: bespoke
-CSS per the mockups; all states — fresh / already-responded / cancelled / revoked / past
-(§2.5); Going/Maybe/Can't, note, plus-ones, household per-member; add-to-calendar (`.ics`
-`VEVENT` + Google link); who's-coming toggle. Submits write `InvitationAttendee` +
-`RsvpEvent`; first hit sets `opened_at`. Model helpers already exist and must be used:
-**all state changes go through `Invitation.advance_state()`** (monotonic ladder — no
-regressions, bounce-before-open only, REVOKED terminal) and **attendee rows come from
-`Invitation.sync_attendees()`** (auto-runs on create; re-run after household membership
-changes; never auto-removes).
-- **Gate:** create event (admin) → open an invitation link → RSVP (single + household) →
-  see counts update on a basic dashboard. No email involved yet. State machine tested.
+### Phase 3 — Event flow + RSVP page (the core loop, no messaging) ✅
+Took the "lean on admin" route: event/guest CRUD stays in Django admin; built the guest page
++ dashboard. **Guest RSVP page** at `/i/<token>` (bespoke CSS per mockups, system fonts,
+zero JS — radios + PRG): all states — fresh / already-responded / cancelled (banner,
+POST 403) / revoked (410 dead-end, no details leaked) / past (read-only); single 3-button
+and household per-member forms; plus-ones (cap-clamped, toggle-aware); shared note;
+who's-coming first names behind the toggle; add-to-calendar (`core/ics.py`: escaped
+VEVENT with stable UID + Google link). First GET sets `opened_at` + OPENED; submits go
+through `advance_state`/append `RsvpEvent(actor=guest)`. `Referrer-Policy: no-referrer`
+on all guest responses. **Dashboard** at `/admin/events/<pk>/dashboard/` (staff-only,
+linked from admin): headcount stats incl. Total expected, per-invitation table with
+per-member statuses + copyable RSVP links (the hand-delivery flow).
+- **Gate — passing:** admin-created event → open link → RSVP single + household → counts
+  update on the dashboard; no email involved. 15 new tests (36 total green).
 
 ### Phase 4 — Dispatcher + email (Resend) + notifications ⬜
 `core/channels/` dispatcher interface (automated vs assisted); **email plugin** via Resend

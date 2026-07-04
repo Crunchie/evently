@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+{% load static %}
+<title>{% block title %}evently{% endblock %}</title>
+<link rel="stylesheet" href="{% static 'core/app.css' %}">
+</head>
+<body class="{% block bodyclass %}{% endblock %}">
+{% block content %}{% endblock %}
+</body>
+</html>

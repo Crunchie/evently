@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}
+{% block title %}Dashboard — {{ event.title }}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap wide">
+
+  <p class="crumbs"><a href="{% url 'admin:core_event_changelist' %}">← events</a></p>
+  <h1>{{ event.title }}
+    <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span>
+  </h1>
+  <p class="meta">{{ event.starts_at|date:"D, j M Y · g:i A" }}{% if event.location_text %} · {{ event.location_text }}{% endif %}
+    · <a href="{% url 'admin:core_event_change' event.pk %}">edit in admin</a></p>
+
+  <section class="stats">
+    <div class="stat hero"><div class="n">{{ expected }}</div><div class="l">Total expected</div></div>
+    <div class="stat"><div class="n going">{{ going }}</div><div class="l">Going</div></div>
+    <div class="stat"><div class="n maybe">{{ maybe }}</div><div class="l">Maybe</div></div>
+    <div class="stat"><div class="n cant">{{ cant }}</div><div class="l">Can't</div></div>
+    <div class="stat"><div class="n muted">{{ no_reply }}</div><div class="l">No reply</div>
+      <div class="tiny">{{ invited }} invited · {{ opened }} opened</div></div>
+  </section>
+
+  <table class="guests">
+    <thead>
+      <tr><th>Guest</th><th>Invite state</th><th>RSVP</th><th>+1</th><th>Note</th><th>Link</th></tr>
+    </thead>
+    <tbody>
+      {% for inv in invitations %}
+      <tr>
+        <td class="name">{{ inv.household.name|default:inv.contact.name }}</td>
+        <td><span class="badge st-{{ inv.state }}">{{ inv.get_state_display }}</span></td>
+        <td>
+          {% for attendee in inv.attendees.all %}
+          <div class="mini">{{ attendee.contact.greeting_name }}
+            <strong class="s-{{ attendee.rsvp_status }}">{{ attendee.get_rsvp_status_display }}</strong></div>
+          {% endfor %}
+        </td>
+        <td>{{ inv.plus_ones|default:"—" }}</td>
+        <td class="note">{{ inv.latest_note|truncatechars:60 }}</td>
+        <td class="link"><input type="text" readonly value="{{ inv.rsvp_url }}" onclick="this.select()"></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="empty">No invitations yet — add guests via the
+        <a href="{% url 'admin:core_invitation_add' %}">admin</a>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</main>
+{% endblock %}
