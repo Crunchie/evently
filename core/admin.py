@@ -1,8 +1,11 @@
 """Organizer backoffice (§2.6). v1 leans on the Django admin for CRUD; the polished
 dashboard + send queue are hand-built later (Phase 6)."""
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.db.models import Count
+from django.shortcuts import get_object_or_404, redirect
+from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -80,6 +83,47 @@ class ContactAdmin(admin.ModelAdmin):
     list_select_related = ("household",)
     filter_horizontal = ("tags",)
     inlines = [ContactChannelInline]
+    actions = ["invite_to_event"]
+
+    @admin.action(description="Invite selected contacts to an event…")
+    def invite_to_event(self, request, queryset):
+        """Bulk-create one Invitation per selected contact (§2.2). Attendees + token
+        are auto-handled by Invitation.save(); the (event, contact) unique constraint
+        makes already-invited contacts a safe skip. Sending stays a separate reviewed
+        step on the event's send screen."""
+        if "apply" in request.POST:
+            event = get_object_or_404(Event, pk=request.POST.get("event"))
+            already = set(
+                Invitation.objects.filter(event=event, contact__in=queryset).values_list(
+                    "contact_id", flat=True
+                )
+            )
+            created = 0
+            for contact in queryset:
+                if contact.pk in already:
+                    continue
+                Invitation.objects.create(event=event, contact=contact)
+                created += 1
+            skipped = len(already)
+            self.message_user(
+                request,
+                f"Invited {created} contact(s) to “{event.title}”"
+                + (f"; {skipped} already invited (skipped)." if skipped else "."),
+                messages.SUCCESS,
+            )
+            return redirect(reverse("event-send", args=[event.pk]))
+
+        events = Event.objects.exclude(status=Event.Status.CANCELLED).order_by("-starts_at")
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Invite contacts to an event",
+            "contacts": queryset,
+            "events": events,
+            "selected": list(queryset.values_list("pk", flat=True)),
+            "action_checkbox_name": ACTION_CHECKBOX_NAME,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(request, "admin/invite_to_event.html", context)
 
 
 @admin.register(ContactChannel)

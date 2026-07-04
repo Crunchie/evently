@@ -61,6 +61,57 @@ def contact_with_email(name, email, preferred=True):
 
 
 # --------------------------------------------------------------------------- #
+#  Bulk-invite admin action (§2.2)
+# --------------------------------------------------------------------------- #
+def test_bulk_invite_creates_one_invitation_per_contact(staff_client, event):
+    alice = contact_with_email("Alice", "a@x.com")
+    bob = contact_with_email("Bob", "b@x.com")
+    url = reverse("admin:core_contact_changelist")
+
+    # First POST (no "apply"): the intermediate event-picker page renders.
+    page = staff_client.post(
+        url, {"action": "invite_to_event", "_selected_action": [alice.pk, bob.pk]}
+    )
+    assert page.status_code == 200
+    assert b'name="event"' in page.content  # the event <select>
+
+    # Second POST ("apply"): invitations created, redirect to the send screen.
+    resp = staff_client.post(
+        url,
+        {
+            "action": "invite_to_event",
+            "_selected_action": [alice.pk, bob.pk],
+            "apply": "1",
+            "event": event.pk,
+        },
+    )
+    assert resp.status_code == 302
+    assert reverse("event-send", args=[event.pk]) in resp.url
+    assert Invitation.objects.filter(event=event).count() == 2
+    # Attendee rows are auto-synced by Invitation.save().
+    assert InvitationAttendee.objects.filter(invitation__event=event).count() == 2
+
+
+def test_bulk_invite_skips_already_invited(staff_client, event):
+    alice = contact_with_email("Alice", "a@x.com")
+    Invitation.objects.create(event=event, contact=alice)  # already invited
+    bob = contact_with_email("Bob", "b@x.com")
+
+    staff_client.post(
+        reverse("admin:core_contact_changelist"),
+        {
+            "action": "invite_to_event",
+            "_selected_action": [alice.pk, bob.pk],
+            "apply": "1",
+            "event": event.pk,
+        },
+    )
+    assert Invitation.objects.filter(event=event, contact=alice).count() == 1  # not doubled
+    assert Invitation.objects.filter(event=event, contact=bob).count() == 1
+    assert Invitation.objects.filter(event=event).count() == 2
+
+
+# --------------------------------------------------------------------------- #
 #  Organizer override (§2.3)
 # --------------------------------------------------------------------------- #
 def test_override_records_organizer_actor(staff_client, event, django_user_model):

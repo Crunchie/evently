@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:core_contact_changelist' %}">Contacts</a>
+  &rsaquo; Invite to an event
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Create an invitation to the chosen event for each of these
+   {{ contacts|length }} contact{{ contacts|length|pluralize }}
+   (anyone already invited is skipped):</p>
+
+<ul>
+  {% for c in contacts %}<li>{{ c }}</li>{% endfor %}
+</ul>
+
+<form method="post">
+  {% csrf_token %}
+  {% for pk in selected %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="invite_to_event">
+  <input type="hidden" name="apply" value="1">
+
+  <p>
+    <label for="event">Event:</label>
+    <select name="event" id="event" required>
+      {% for e in events %}
+        <option value="{{ e.pk }}">{{ e.title }} — {{ e.starts_at|date:"D j M Y, H:i" }}</option>
+      {% empty %}
+        <option value="" disabled>No events yet — create one first</option>
+      {% endfor %}
+    </select>
+  </p>
+
+  <div class="submit-row">
+    <input type="submit" class="default" value="Invite contacts">
+    <a href="{% url 'admin:core_contact_changelist' %}" class="button cancel-link">Cancel</a>
+  </div>
+</form>
+{% endblock %}
