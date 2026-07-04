@@ -86,6 +86,16 @@ def test_bounce_cannot_regress_an_opened_invitation(client, secret, sent_deliver
     assert invitation.state == State.OPENED  # ladder holds (§2.3)
 
 
+def test_failed_event_marks_delivery_failed(client, secret, sent_delivery):
+    body = json.dumps({"type": "email.failed", "data": {"email_id": "re_123"}}).encode()
+    resp = post(client, body, sign(body))
+    assert resp.status_code == 200
+
+    sent_delivery.refresh_from_db()
+    assert sent_delivery.status == Delivery.Status.FAILED  # not BOUNCED
+    assert sent_delivery.invitation.state == State.BOUNCED
+
+
 def test_forged_signature_rejected(client, secret, sent_delivery):
     body = bounce_payload("re_123")
     resp = post(client, body, sign(body, key=b"wrong-key-entirely-000000000000"))

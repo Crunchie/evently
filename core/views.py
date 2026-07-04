@@ -611,7 +611,11 @@ def resend_webhook(request):
     except json.JSONDecodeError:
         return HttpResponse(status=400)
 
-    if payload.get("type") in ("email.bounced", "email.complained"):
+    # bounced/complained: provider accepted then the message failed to land, or the
+    # recipient marked it spam. failed: an async delivery failure after acceptance —
+    # the synchronous send path (channels.py) only catches API-time rejection, so
+    # without this the Delivery would sit at SENT forever.
+    if payload.get("type") in ("email.bounced", "email.complained", "email.failed"):
         data = payload.get("data") or {}
         provider_id = data.get("email_id") or data.get("id") or ""
         delivery = (
@@ -620,9 +624,10 @@ def resend_webhook(request):
             .first()
         )
         if delivery:
-            delivery.status = Delivery.Status.BOUNCED
+            failed = payload["type"] == "email.failed"
+            delivery.status = Delivery.Status.FAILED if failed else Delivery.Status.BOUNCED
             delivery.error = payload["type"]
             delivery.save(update_fields=["status", "error", "updated_at"])
-            # Ladder rules apply: a bounce can't override an open/response (§2.3).
+            # Ladder rules apply: this can't override an open/response (§2.3).
             delivery.invitation.advance_state(Invitation.State.BOUNCED)
     return JsonResponse({"ok": True})

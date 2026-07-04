@@ -156,8 +156,9 @@ Back in Resend, hit **Verify**; wait for all green. Then add a DMARC record manu
 
 Also in Resend: create an **API key** → **`RESEND_API_KEY`** in `.env`. In Phase 4
 you'll also add a **Webhook** (Resend → Webhooks) pointing at
-`https://<HOST>/webhooks/resend` for bounce events, and copy its **signing secret** into
-`.env` (variable lands with Phase 4).
+`https://<HOST>/webhooks/resend`, subscribed to **`email.bounced`, `email.complained`,
+and `email.failed`** (the only events the handler acts on), and copy its **signing
+secret** into `.env` (variable lands with Phase 4).
 
 ## 5b. R2 bucket for Litestream backups (Phase 7)
 

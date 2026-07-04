@@ -360,9 +360,11 @@ or on-demand future work. Ordered: do the ⚠️ items before inviting anyone re
       (allow-listed emails; Access session duration).
 
 ### Resend dashboard
-- [ ] ⚠️ **Create the bounce webhook** → `https://samandmonevents.party/webhooks/resend`,
-      copy its signing secret into `.env` as `RESEND_WEBHOOK_SECRET`, redeploy.
-      Until then bounces are rejected fail-closed (invisible, not broken).
+- [ ] ⚠️ **Create the delivery webhook** → `https://samandmonevents.party/webhooks/resend`,
+      subscribed to **`email.bounced`, `email.complained`, `email.failed`** (all the
+      handler acts on; other events are ignored). Copy its signing secret into `.env` as
+      `RESEND_WEBHOOK_SECRET`, redeploy. Until then these are rejected fail-closed
+      (invisible, not broken).
 - [ ] Confirm the domain shows **Verified** (the app's API key is send-only, so this
       can't be checked from here), then **send yourself a real test invite** from the
       send screen and check DKIM/SPF pass headers in Gmail (`Show original`).
