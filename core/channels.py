@@ -80,6 +80,16 @@ def wa_link(phone: str, text: str) -> str | None:
     return f"https://wa.me/{e164.lstrip('+')}?text={quote(text)}"
 
 
+def _list_unsubscribe_headers() -> dict:
+    """List-Unsubscribe pointing at the reply-to inbox, so a recipient can opt out and
+    the organizer can suppress that address. Empty dict when no reply-to is configured
+    (an unactionable header is worse than none)."""
+    unsub = settings.EMAIL_REPLY_TO
+    if not unsub:
+        return {}
+    return {"List-Unsubscribe": f"<mailto:{unsub}?subject=unsubscribe>"}
+
+
 def send_email_batch(messages: list[dict]) -> list[str]:
     """One Resend batch call → provider ids aligned with the input. Patched in tests."""
     resend.api_key = settings.RESEND_API_KEY
@@ -150,6 +160,10 @@ def dispatch_email(invitations, kind: str, base_url: str) -> dict:
                     "subject": message["subject"],
                     "text": message["text"],
                     "html": message["html"],
+                    # List-Unsubscribe is a deliverability trust signal (Gmail/Yahoo bulk
+                    # guidance). mailto only — we have no one-click POST endpoint, so we
+                    # deliberately omit List-Unsubscribe-Post rather than claim it falsely.
+                    "headers": _list_unsubscribe_headers(),
                 }
             )
             deliveries.append((delivery, invitation))

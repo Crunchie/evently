@@ -55,7 +55,8 @@ def send_url(event):
     return reverse("event-send", args=[event.pk])
 
 
-def test_send_invites_flow(staff_client, event, fake_send):
+def test_send_invites_flow(staff_client, event, fake_send, settings):
+    settings.EMAIL_REPLY_TO = "hosts@example.com"  # drives the List-Unsubscribe mailto
     inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex Doe", "a@x.com"))
     no_email = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Tom"))
 
@@ -83,6 +84,8 @@ def test_send_invites_flow(staff_client, event, fake_send):
     assert message["to"] == ["a@x.com"]
     assert "You're invited" in message["subject"] and "Summer BBQ" in message["subject"]
     assert inv.rsvp_path in message["text"]
+    # List-Unsubscribe present for deliverability (mailto → reply-to inbox).
+    assert message["headers"]["List-Unsubscribe"] == "<mailto:hosts@example.com?subject=unsubscribe>"
 
     # idempotent: nothing pending anymore → second send is a no-op
     resp = staff_client.post(send_url(event), {"action": "invites"})
