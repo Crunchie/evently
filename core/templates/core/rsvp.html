@@ -54,19 +54,6 @@
       </div>
       {% endif %}
 
-      {% if map_embed_url %}
-      <div>
-        <h2 class="sec-title">Getting there</h2>
-        <section class="card map">
-          <iframe src="{{ map_embed_url }}" title="Map to {{ event.location_text }}"
-                  loading="lazy" referrerpolicy="no-referrer"></iframe>
-          {% if event.location_url %}
-          <a class="loc" href="{{ event.location_url }}" target="_blank" rel="noopener">{{ event.location_text }} ↗</a>
-          {% else %}<span class="loc">{{ event.location_text }}</span>{% endif %}
-        </section>
-      </div>
-      {% endif %}
-
       {% if polls %}
       <div>
         <h2 class="sec-title">{{ event.host_display|default:"Your host" }} is asking…</h2>
@@ -102,6 +89,19 @@
           {% endif %}
         </section>
         {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if map_embed_url %}
+      <div>
+        <h2 class="sec-title">Getting there</h2>
+        <section class="card map">
+          <iframe src="{{ map_embed_url }}" title="Map to {{ event.location_text }}"
+                  loading="lazy" referrerpolicy="no-referrer"></iframe>
+          {% if event.location_url %}
+          <a class="loc" href="{{ event.location_url }}" target="_blank" rel="noopener">{{ event.location_text }} ↗</a>
+          {% else %}<span class="loc">{{ event.location_text }}</span>{% endif %}
+        </section>
       </div>
       {% endif %}
     </div>
