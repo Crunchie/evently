@@ -27,3 +27,9 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+      - name: Audit dependencies for known vulnerabilities
+        # --no-deps is safe: uv export emits the full frozen lock, transitive deps included.
+        run: |
+          uv export --frozen --no-hashes --no-emit-project -o requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt --disable-pip --no-deps

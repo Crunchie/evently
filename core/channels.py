@@ -188,6 +188,13 @@ def dispatch_email(invitations, kind: str, base_url: str) -> dict:
             delivery.save(update_fields=["status", "provider_message_id", "sent_at", "updated_at"])
             invitation.advance_state(Invitation.State.SENT)
             sent += 1
+        # Provider returned fewer ids than messages: the unmatched tail would
+        # otherwise sit QUEUED forever, invisible to the ✓/✗ counts.
+        for delivery, _ in batch[len(ids) :]:
+            delivery.status = Delivery.Status.FAILED
+            delivery.error = "provider returned no message id"
+            delivery.save(update_fields=["status", "error", "updated_at"])
+            failed += 1
 
     return {"sent": sent, "failed": failed, "skipped": skipped}
 

@@ -128,6 +128,19 @@ def test_provider_error_marks_failed_and_keeps_state(staff_client, event, monkey
     assert "Retry" in staff_client.get(send_url(event)).content.decode()
 
 
+def test_short_provider_response_fails_the_unmatched_tail(staff_client, event, monkeypatch):
+    """If Resend returns fewer ids than messages, the tail must be FAILED, not
+    left QUEUED forever and missing from the ✓/✗ counts."""
+    monkeypatch.setattr(channels, "send_email_batch", lambda messages: ["re_0"])  # one id short
+    for n, email in enumerate(("a@x.com", "b@x.com")):
+        Invitation.objects.create(event=event, contact=contact_with_email(f"Guest {n}", email))
+
+    resp = staff_client.post(send_url(event), {"action": "invites"})
+    assert "sent=1" in resp["Location"] and "failed=1" in resp["Location"]
+    assert Delivery.objects.filter(status=Delivery.Status.FAILED).count() == 1
+    assert not Delivery.objects.filter(status=Delivery.Status.QUEUED).exists()
+
+
 def test_household_sends_same_link_to_each_parent(staff_client, event, fake_send):
     hh = Household.objects.create(name="The Hendersons")
     jane = contact_with_email("Jane", "jane@x.com")

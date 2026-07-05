@@ -223,3 +223,35 @@ def test_queue_requires_staff(client, event):
 
 def test_queue_rejects_unknown_kind(staff_client, event):
     assert staff_client.get(queue_url(event, kind="hax")).status_code == 403
+
+
+def test_queue_post_with_garbage_ids_is_a_404_not_a_500(staff_client, event):
+    resp = staff_client.post(
+        reverse("event-queue", args=[event.pk]),
+        {"action": "shared", "kind": "invite", "n": 0, "invitation": "abc", "channel": "abc"},
+    )
+    assert resp.status_code == 404
+
+
+def test_queue_rejects_unapproved_proposed_channel(staff_client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    proposed = ContactChannel.objects.create(
+        contact=dave,
+        kind=Kind.WHATSAPP,
+        value="+64299999999",
+        status=ContactChannel.Status.PROPOSED,
+        source=ContactChannel.Source.GUEST,
+    )
+    resp = staff_client.post(
+        reverse("event-queue", args=[event.pk]),
+        {
+            "action": "shared",
+            "kind": "invite",
+            "n": 0,
+            "invitation": inv.pk,
+            "channel": proposed.pk,
+        },
+    )
+    assert resp.status_code == 403
+    assert not inv.deliveries.exists()

@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Count, Max, Prefetch, Q
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -53,6 +53,15 @@ RSVP_CHOICES = {
 ORGANIZER_RSVP_CHOICES = RSVP_CHOICES | {InvitationAttendee.Rsvp.NO_REPLY}
 MAX_PLUS_ONES = 9  # absolute ceiling when the event sets no cap
 MAX_NOTE_LEN = 500
+
+
+def _posted_pk(request, field: str) -> int:
+    """An integer pk out of POST data. A non-numeric value must 404 like a missing
+    row, not 500 — get_object_or_404 lets the int cast's ValueError escape."""
+    try:
+        return int(request.POST.get(field, ""))
+    except (TypeError, ValueError):
+        raise Http404(f"invalid {field}")
 
 
 def healthz(request):
@@ -180,6 +189,7 @@ def rsvp_page(request, token):
     return _guest_render(request, "core/rsvp.html", context)
 
 
+@transaction.atomic
 def _apply_rsvp(
     request,
     invitation: Invitation,
@@ -265,7 +275,10 @@ def rsvp_channel_request(request, token):
     if invitation.contact_id:
         contact = invitation.contact
     else:
-        contact = invitation.household.members.filter(pk=request.POST.get("member")).first()
+        try:
+            contact = invitation.household.members.filter(pk=request.POST.get("member")).first()
+        except ValueError:  # non-numeric member id — same clean rejection as an unknown one
+            contact = None
         if contact is None:
             return redirect(f"{invitation.rsvp_path}?channel_error=1")
 
@@ -561,9 +574,12 @@ def event_queue(request, pk):
 
     if request.method == "POST":
         action = request.POST.get("action", "")
-        invitation = get_object_or_404(Invitation, pk=request.POST.get("invitation"), event=event)
-        channel = get_object_or_404(ContactChannel, pk=request.POST.get("channel"))
-        # Integrity: the channel must belong to someone this envelope covers.
+        invitation = get_object_or_404(
+            Invitation, pk=_posted_pk(request, "invitation"), event=event
+        )
+        channel = get_object_or_404(ContactChannel, pk=_posted_pk(request, "channel"))
+        # Integrity: the channel must belong to someone this envelope covers, and be
+        # ACTIVE — a guest-proposed channel is untrusted until approved (§8).
         covered = (
             {invitation.contact_id}
             if invitation.contact_id
@@ -571,6 +587,8 @@ def event_queue(request, pk):
         )
         if channel.contact_id not in covered:
             return HttpResponseForbidden("Channel does not belong to this invitation")
+        if channel.status != ContactChannel.Status.ACTIVE:
+            return HttpResponseForbidden("Channel is not active")
         if action == "shared":
             Delivery.objects.create(
                 invitation=invitation,

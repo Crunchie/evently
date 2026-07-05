@@ -399,6 +399,12 @@ def test_household_request_targets_chosen_member(client, event):
         {"kind": "email", "value": "s@x.com", "member": outsider.pk},
     )
     assert "channel_error=1" in resp["Location"] and not outsider.channels.exists()
+    # a non-numeric member id is the same clean rejection, not a 500
+    resp = client.post(
+        reverse("rsvp-channel", args=[inv.token]),
+        {"kind": "email", "value": "j@x.com", "member": "abc"},
+    )
+    assert "channel_error=1" in resp["Location"]
 
 
 def test_approve_makes_channel_active_and_preferred(staff_client, event):
