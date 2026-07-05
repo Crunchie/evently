@@ -118,6 +118,45 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!seen) open();
   }
 
+  // --- Repeatable form rows (contact channels, household members) -------- //
+  // A "remove" flags the row deleted (hidden input → "1") and hides it, but never
+  // pulls it from the DOM — so the parallel-array field indices, and the
+  // preferred/primary radio values that point at them, stay stable. New rows are
+  // cloned from a <template> and appended. Degrades cleanly: the server renders the
+  // rows and reads the same fields, so the form works with JS off.
+  document.querySelectorAll("[data-add-row]").forEach((addBtn) => {
+    const container = addBtn.parentElement.querySelector("[data-rows]");
+    if (!container) return;
+    const template = container.querySelector("template[data-row-template]");
+    if (!template) return;
+
+    const liveRowCount = () => container.querySelectorAll("[data-delete]").length;
+
+    const wireRemove = (row) => {
+      const btn = row.querySelector("[data-remove-row]");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        const del = row.querySelector("[data-delete]");
+        if (del) del.value = "1";
+        const radio = row.querySelector('input[type="radio"]');
+        if (radio) radio.checked = false;
+        row.hidden = true;
+      });
+    };
+
+    container
+      .querySelectorAll("[data-delete]")
+      .forEach((del) => wireRemove(del.parentElement));
+
+    addBtn.addEventListener("click", () => {
+      const row = template.content.firstElementChild.cloneNode(true);
+      const radio = row.querySelector('input[type="radio"]');
+      if (radio) radio.value = String(liveRowCount()); // stable index, matches DOM order
+      container.insertBefore(row, template);
+      wireRemove(row);
+    });
+  });
+
   // --- PWA: register the organizer service worker ------------------------ //
   const swUrl = document.body.dataset.sw;
   if (swUrl && "serviceWorker" in navigator) {

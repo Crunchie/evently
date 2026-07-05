@@ -1,0 +1,14 @@
+{% extends "admin/index.html" %}
+{# Surface the friendly organizer home at the top of the Django admin index, so an
+   organizer who types the habitual /admin reaches it in one click (§2.6). Inline
+   styles are fine here — admin pages get style-src 'unsafe-inline' (core/security.py). #}
+{% block content %}
+<div class="module" style="margin-bottom:20px">
+  <h2>Organizer home</h2>
+  <p style="padding:10px 12px">
+    <a href="{% url 'admin-home' %}"><strong>→ Go to Organizer home</strong></a>
+    — jump to contacts, your events, and quick links. The models below are the full admin.
+  </p>
+</div>
+{{ block.super }}
+{% endblock %}

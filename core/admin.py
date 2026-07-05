@@ -24,6 +24,12 @@ from .models import (
     Tag,
 )
 
+# Point the admin's "View site" link at the friendly organizer home, not the guest
+# apex dead-end, and brand the header (§2.6).
+admin.site.site_url = "/admin/home/"
+admin.site.site_header = "evently"
+admin.site.index_title = "Full admin"
+
 
 # --- Inlines ---------------------------------------------------------------- #
 class ContactChannelInline(admin.TabularInline):

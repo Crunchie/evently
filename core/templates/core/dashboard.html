@@ -4,14 +4,15 @@
 {% block content %}
 <main class="wrap wide">
 
-  <p class="crumbs"><a href="{% url 'admin:core_event_changelist' %}">← events</a></p>
+  <p class="crumbs"><a href="{% url 'admin-home' %}">← home</a></p>
   <h1>{{ event.title }}
     <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span>
   </h1>
   <p class="meta">{{ event.starts_at|date:"D, j M Y · g:i A" }}{% if event.location_text %} · {{ event.location_text }}{% endif %}
     · <a href="{% url 'admin:core_event_change' event.pk %}">edit in admin</a>
     · <a href="{% url 'event-invite' event.pk %}"><strong>➕ add guests</strong></a>
-    · <a href="{% url 'event-send' event.pk %}"><strong>✉️ send &amp; notify</strong></a></p>
+    · <a href="{% url 'event-send' event.pk %}"><strong>✉️ send &amp; notify</strong></a>
+    · <a href="{% url 'contacts-home' %}">👥 contacts</a></p>
 
   {% if result %}
   <div class="banner {% if result.failed and result.failed != '0' %}bad{% else %}ok{% endif %}">

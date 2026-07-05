@@ -448,3 +448,68 @@ body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
 .poll-create summary { font-size: .85rem; color: var(--coral); cursor: pointer; font-weight: 700; }
 .poll-create form { margin-top: .5rem; max-width: 28rem; display: flex; flex-direction: column; gap: .4rem; }
 .poll-create .check { font-size: .85rem; display: flex; gap: .4rem; align-items: center; }
+
+/* ---------- contacts & households (§2.2) — hand-built add flow ---------- */
+.contacts-actions { margin-top: 1rem; }
+.save.alt { background: #6d5bd0; }
+.save.alt:hover { background: #5b49bd; }
+.picker-search.spaced { margin-top: 1.2rem; }
+.pick-head .push-right { margin-left: auto; }
+body.dash .card .sub.tight { margin-top: .1rem; }
+.pick-row.selectable { cursor: pointer; }
+.pick-head .pn a, .pick-row .cn a { color: var(--ink); }
+.pick-head .pn a:hover, .pick-row .cn a:hover { color: var(--coral); }
+
+.form-grid { display: grid; grid-template-columns: 2fr 1.4fr 1fr; gap: .6rem; }
+@media (max-width: 540px) { .form-grid { grid-template-columns: 1fr; } }
+.form-grid .field { margin-top: .6rem; }
+
+/* repeatable channel / member rows: rows are flagged deleted + hidden, never removed */
+.chan-row, .member-row {
+  display: flex; align-items: center; gap: .5rem; padding: .55rem 0;
+  border-top: 1px solid var(--line);
+}
+.chan-row:first-child, .member-row:first-child { border-top: none; }
+.member-row { align-items: flex-start; }
+.member-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .5rem; }
+.member-fields .form-grid { gap: .5rem; }
+.chan-inline { display: flex; gap: .5rem; }
+.chan-pref { flex: 0 0 auto; display: grid; place-items: center; padding: .2rem; }
+.chan-pref input { width: 1.1rem; height: 1.1rem; cursor: pointer; }
+.chan-row select, .chan-row input[type="text"],
+.chan-inline select, .chan-inline input,
+.member-fields input, .member-fields select {
+  padding: .5rem .6rem; border: 1.5px solid var(--line); border-radius: 10px;
+  font: inherit; color: var(--ink); background: #fff; min-width: 0;
+}
+.chan-row select:focus, .chan-row input:focus,
+.member-fields input:focus, .member-fields select:focus,
+.chan-inline input:focus, .chan-inline select:focus { outline: none; border-color: var(--coral); }
+.chan-row input[name="channel_value"], .chan-row input[name="channel_label"] { flex: 1; }
+.chan-inline input { flex: 1; }
+.member-fields .form-grid input { width: 100%; }
+.chan-row .mini-btn, .member-row .mini-btn { flex: 0 0 auto; }
+.repeat-add {
+  margin-top: .7rem; padding: .5rem .9rem; border: 1.5px dashed var(--line);
+  border-radius: 10px; background: #fff; color: var(--coral); font: inherit;
+  font-weight: 700; font-size: .88rem; cursor: pointer;
+}
+.repeat-add:hover { border-color: var(--coral); }
+
+/* ---------- organizer home (§2.6) ---------- */
+.home-section { margin-top: 1.6rem; margin-bottom: .7rem; }
+.home-event {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  background: #fff; border-radius: 12px; box-shadow: var(--shadow-sm);
+  padding: .85rem 1rem; margin-bottom: .6rem; color: var(--ink);
+}
+.home-event:hover { box-shadow: var(--shadow); }
+.he-main { min-width: 0; }
+.he-title { font-weight: 700; font-size: 1.02rem; display: block; }
+.he-meta { color: var(--muted); font-size: .85rem; }
+.he-side { display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
+.he-count { color: var(--muted); font-size: .82rem; }
+.home-past { list-style: none; padding: 0; margin: 0; }
+.home-past li { padding: .35rem 0; font-size: .92rem; display: flex; align-items: baseline; gap: .5rem; }
+.home-past a { color: var(--ink); font-weight: 600; }
+.home-past a:hover { color: var(--coral); }

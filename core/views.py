@@ -7,12 +7,9 @@ import time
 from datetime import timedelta
 from urllib.parse import urlencode
 
-import phonenumbers
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.staticfiles import finders
-from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Count, Max, Prefetch, Q
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
@@ -23,11 +20,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .channels import (
+    ENTRY_KINDS,
     assisted_channels,
     dispatch_email,
     email_channels,
     send_targets,
     shared_channel_pairs,
+    validate_channel_value,
     wa_link,
 )
 from .ics import event_ics, google_calendar_url, google_maps_embed_url
@@ -44,6 +43,7 @@ from .models import (
     PollOption,
     PollVote,
     RsvpEvent,
+    Tag,
     make_token,
 )
 
@@ -350,12 +350,7 @@ def rsvp_channel_request(request, token):
 
     kind = request.POST.get("kind", "")
     value = request.POST.get("value", "").strip()[:254]
-    if kind not in (
-        ContactChannel.Kind.EMAIL,
-        ContactChannel.Kind.WHATSAPP,
-        ContactChannel.Kind.MESSENGER,
-        ContactChannel.Kind.SMS,
-    ):
+    if kind not in ENTRY_KINDS:
         return redirect(f"{invitation.rsvp_path}?channel_error=1")
 
     # Whose channel: the single contact, or the chosen household member.
@@ -369,21 +364,9 @@ def rsvp_channel_request(request, token):
         if contact is None:
             return redirect(f"{invitation.rsvp_path}?channel_error=1")
 
-    if kind == ContactChannel.Kind.EMAIL:
-        try:
-            validate_email(value)
-        except ValidationError:
-            return redirect(f"{invitation.rsvp_path}?channel_error=1")
-    elif kind in (ContactChannel.Kind.WHATSAPP, ContactChannel.Kind.SMS):
-        try:
-            parsed = phonenumbers.parse(value, settings.PHONE_REGION)
-        except phonenumbers.NumberParseException:
-            return redirect(f"{invitation.rsvp_path}?channel_error=1")
-        if not phonenumbers.is_valid_number(parsed):
-            return redirect(f"{invitation.rsvp_path}?channel_error=1")
-        value = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-    else:  # Messenger needs no address (§6)
-        value = ""
+    value, error = validate_channel_value(kind, value)
+    if error:
+        return redirect(f"{invitation.rsvp_path}?channel_error=1")
 
     with transaction.atomic():
         # One pending request per person: a newer ask replaces the older one.
@@ -855,6 +838,389 @@ def poll_action(request, pk):
         option.delete()  # votes CASCADE — a removed option takes its ticks with it
         return _dash(event_pk, action, msg=f"Option removed: {option.text}")
     return HttpResponseForbidden("Unknown action")
+
+
+# --------------------------------------------------------------------------- #
+#  Organizer home (§2.6) — the friendly landing behind Access: jump to contacts,
+#  your events (each linking to its dashboard), and out to the full Django admin.
+#  The Django admin index links here and `admin.site.site_url` points at it, so an
+#  organizer reaches it from the habitual /admin without remembering a URL.
+# --------------------------------------------------------------------------- #
+@staff_member_required
+def admin_home(request):
+    now = timezone.now()
+    events = list(Event.objects.order_by("starts_at"))
+    upcoming = [e for e in events if e.starts_at >= now and e.status != Event.Status.CANCELLED]
+    # Everything else (already happened, or cancelled) — most-recent first, capped.
+    past = [e for e in reversed(events) if e.starts_at < now or e.status == Event.Status.CANCELLED]
+    context = {
+        "upcoming": upcoming,
+        "past": past[:8],
+        "past_total": len(past),
+        "contacts_count": Contact.objects.count(),
+    }
+    return render(request, "core/admin_home.html", context)
+
+
+# --------------------------------------------------------------------------- #
+#  Contacts & households (§2.2) — hand-built organizer flow that replaces the
+#  Django admin for the everyday "add a person / build a family" job. Admin stays
+#  registered as CRUD backup. Lives under /admin/ so the one Access rule gates it.
+# --------------------------------------------------------------------------- #
+CHANNEL_KIND_CHOICES = [(k.value, k.label) for k in ContactChannel.Kind if k in ENTRY_KINDS]
+MAX_NAME_LEN = 120
+MAX_NICK_LEN = 60
+MAX_LABEL_LEN = 60
+# A birth year is a light "age N" hint for kids (§2.5), not identity — bound it sanely.
+MIN_BIRTH_YEAR = 1900
+
+
+def _contacts_redirect(msg: str):
+    return redirect(f"{reverse('contacts-home')}?{urlencode({'msg': msg})}")
+
+
+def _parse_year(raw: str):
+    """A 4-digit birth year in a sane range, else None (forgiving — never an error)."""
+    try:
+        year = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return year if MIN_BIRTH_YEAR <= year <= timezone.now().year else None
+
+
+def _blank_channel_row():
+    return {"id": "", "kind": ContactChannel.Kind.EMAIL, "value": "", "label": "", "preferred": False}
+
+
+def _channel_row_from(channel: ContactChannel) -> dict:
+    return {
+        "id": channel.pk,
+        "kind": channel.kind,
+        "value": channel.value,
+        "label": channel.label,
+        "preferred": channel.is_preferred,
+    }
+
+
+def _posted_channel_rows(request) -> list[dict]:
+    """Parse the contact form's parallel-array channel inputs into aligned dicts. Every
+    row renders all fields (selects + hidden inputs always submit), so the lists stay
+    index-aligned; `preferred` names the chosen row's index. Delete-flagged rows drop."""
+    ids = request.POST.getlist("channel_id")
+    kinds = request.POST.getlist("channel_kind")
+    values = request.POST.getlist("channel_value")
+    labels = request.POST.getlist("channel_label")
+    deletes = request.POST.getlist("channel_delete")
+    try:
+        preferred_idx = int(request.POST.get("preferred", "-1"))
+    except (TypeError, ValueError):
+        preferred_idx = -1
+    rows = []
+    for i, kind in enumerate(kinds):
+        if (deletes[i] if i < len(deletes) else "0") == "1":
+            continue
+        rows.append(
+            {
+                "id": (ids[i] if i < len(ids) else "").strip(),
+                "kind": kind,
+                "value": (values[i] if i < len(values) else "").strip()[:254],
+                "label": (labels[i] if i < len(labels) else "").strip()[:MAX_LABEL_LEN],
+                "preferred": i == preferred_idx,
+            }
+        )
+    return rows
+
+
+def _kept_channel_rows(rows: list[dict]) -> list[dict]:
+    """Rows that describe a real channel: Messenger needs no value; the rest without one
+    are treated as empty leftovers and silently skipped (forgiving spare-row behaviour)."""
+    return [r for r in rows if r["kind"] == ContactChannel.Kind.MESSENGER or r["value"]]
+
+
+def _contact_form_context(contact, *, rows, fields, error=None):
+    return {
+        "contact": contact,
+        "households": Household.objects.order_by("name"),
+        "kind_choices": CHANNEL_KIND_CHOICES,
+        "messenger_kind": ContactChannel.Kind.MESSENGER,
+        "rows": rows,
+        "fields": fields,
+        "error": error,
+        "proposed": (
+            list(contact.channels.filter(status=ContactChannel.Status.PROPOSED)) if contact else []
+        ),
+    }
+
+
+def _contact_fields_from(contact) -> dict:
+    return {
+        "name": contact.name,
+        "nickname": contact.nickname,
+        "birth_year": contact.birth_year or "",
+        "household": contact.household_id or "",
+        "notes": contact.notes,
+        "tags": ", ".join(contact.tags.values_list("name", flat=True)),
+    }
+
+
+def _contact_fields_posted(request) -> dict:
+    return {
+        "name": request.POST.get("name", "").strip()[:MAX_NAME_LEN],
+        "nickname": request.POST.get("nickname", "").strip()[:MAX_NICK_LEN],
+        "birth_year": request.POST.get("birth_year", "").strip(),
+        "household": request.POST.get("household", "").strip(),
+        "notes": request.POST.get("notes", "").strip(),
+        "tags": request.POST.get("tags", "").strip(),
+    }
+
+
+def _set_tags(contact, raw: str) -> None:
+    names = [t.strip()[:50] for t in raw.split(",") if t.strip()]
+    tags = [Tag.objects.get_or_create(name=n)[0] for n in names]
+    contact.tags.set(tags)
+
+
+def _save_channels(contact, rows: list[dict]) -> None:
+    """Diff the submitted rows against the contact's ACTIVE channels: update by id,
+    create new ones, delete ACTIVE channels no longer present (preserves Delivery audit
+    rows — Delivery.channel is SET_NULL). Guest PROPOSED channels are never touched.
+    Enforces one preferred by unsetting all first, then flagging the chosen row."""
+    existing = {c.pk: c for c in contact.channels.filter(status=ContactChannel.Status.ACTIVE)}
+    seen_ids: set[int] = set()
+    preferred_channel = None
+    for row in rows:
+        value, _ = validate_channel_value(row["kind"], row["value"])  # already validated
+        try:
+            pk = int(row["id"])
+        except (TypeError, ValueError):
+            pk = None
+        channel = existing.get(pk) if pk else None
+        if channel is None:
+            channel = ContactChannel(contact=contact, source=ContactChannel.Source.ORGANIZER)
+        channel.kind = row["kind"]
+        channel.value = value
+        channel.label = row["label"]
+        channel.is_preferred = False
+        channel.status = ContactChannel.Status.ACTIVE
+        channel.save()
+        seen_ids.add(channel.pk)
+        if row["preferred"]:
+            preferred_channel = channel
+    for pk, channel in existing.items():
+        if pk not in seen_ids:
+            channel.delete()
+    if preferred_channel is not None:
+        preferred_channel.is_preferred = True
+        preferred_channel.save(update_fields=["is_preferred", "updated_at"])
+
+
+@staff_member_required
+def contacts_home(request):
+    """Searchable contact list grouped by household (§2.2) — the front door to the
+    hand-built add-contact / add-household flows."""
+    q = request.GET.get("q", "").strip()
+    households = list(
+        Household.objects.select_related("primary_contact").prefetch_related(
+            Prefetch(
+                "members",
+                queryset=Contact.objects.prefetch_related("channels").order_by("name"),
+            )
+        ).order_by("name")
+    )
+    loose = list(
+        Contact.objects.filter(household__isnull=True).prefetch_related("channels").order_by("name")
+    )
+    total = Contact.objects.count()
+    if q:
+        ql = q.lower()
+        match = lambda c: ql in c.name.lower() or ql in c.nickname.lower()  # noqa: E731
+        groups = []
+        for hh in households:
+            members = list(hh.members.all())
+            if ql in hh.name.lower():
+                groups.append((hh, members))
+            elif (hit := [m for m in members if match(m)]):
+                groups.append((hh, hit))
+        loose = [c for c in loose if match(c)]
+    else:
+        groups = [(hh, list(hh.members.all())) for hh in households]
+    context = {"groups": groups, "loose": loose, "q": q, "total": total, "msg": request.GET.get("msg")}
+    return render(request, "core/contacts_home.html", context)
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def contact_new(request):
+    return _contact_form(request, None)
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def contact_edit(request, pk):
+    contact = get_object_or_404(Contact.objects.prefetch_related("channels", "tags"), pk=pk)
+    return _contact_form(request, contact)
+
+
+def _contact_form(request, contact):
+    """Shared GET/POST handler for adding and editing a contact + its channels (§2.2)."""
+    if request.method == "POST":
+        fields = _contact_fields_posted(request)
+        rows = _kept_channel_rows(_posted_channel_rows(request))
+        error = None
+        if not fields["name"]:
+            error = "A contact needs a name."
+        else:
+            for row in rows:  # validate every kept channel before writing anything
+                _, err = validate_channel_value(row["kind"], row["value"])
+                if err:
+                    error = err
+                    break
+        if error:
+            return render(
+                request,
+                "core/contact_form.html",
+                _contact_form_context(contact, rows=rows or [_blank_channel_row()], fields=fields, error=error),
+            )
+        household = None
+        if fields["household"]:
+            household = Household.objects.filter(pk=fields["household"]).first()
+        with transaction.atomic():
+            if contact is None:
+                contact = Contact(created_by=request.user)
+            contact.name = fields["name"]
+            contact.nickname = fields["nickname"]
+            contact.birth_year = _parse_year(fields["birth_year"])
+            contact.household = household
+            contact.notes = fields["notes"]
+            contact.save()
+            _set_tags(contact, fields["tags"])
+            _save_channels(contact, rows)
+        return _contacts_redirect(f"Saved {contact.name}")
+
+    if contact is None:
+        rows = [_blank_channel_row()]
+        fields = {"name": "", "nickname": "", "birth_year": "", "household": request.GET.get("household", ""), "notes": "", "tags": ""}
+    else:
+        active = contact.channels.filter(status=ContactChannel.Status.ACTIVE).order_by("id")
+        rows = [_channel_row_from(c) for c in active] or [_blank_channel_row()]
+        fields = _contact_fields_from(contact)
+    return render(request, "core/contact_form.html", _contact_form_context(contact, rows=rows, fields=fields))
+
+
+def _posted_member_rows(request) -> list[dict]:
+    """Parse the new-household form's parallel-array member inputs. A row counts as a
+    member when it has a name and isn't delete-flagged; `primary` names the chosen row's
+    index (matched against the surviving members below)."""
+    names = request.POST.getlist("member_name")
+    nicks = request.POST.getlist("member_nick")
+    births = request.POST.getlist("member_birth")
+    kinds = request.POST.getlist("member_ch_kind")
+    values = request.POST.getlist("member_ch_value")
+    deletes = request.POST.getlist("member_delete")
+    try:
+        primary_idx = int(request.POST.get("primary", "-1"))
+    except (TypeError, ValueError):
+        primary_idx = -1
+    rows = []
+    for i, raw_name in enumerate(names):
+        if (deletes[i] if i < len(deletes) else "0") == "1":
+            continue
+        name = raw_name.strip()[:MAX_NAME_LEN]
+        if not name:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "nick": (nicks[i] if i < len(nicks) else "").strip()[:MAX_NICK_LEN],
+                "birth": (births[i] if i < len(births) else "").strip(),
+                "kind": (kinds[i] if i < len(kinds) else "").strip(),
+                "value": (values[i] if i < len(values) else "").strip()[:254],
+                "primary": i == primary_idx,
+            }
+        )
+    return rows
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def household_new(request):
+    """Create a household + its members + one contact method each + the primary contact,
+    all in one submit (§2.2) — the thing the Django admin can't do (primary_contact needs
+    the members to already exist)."""
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()[:MAX_NAME_LEN]
+        members = _posted_member_rows(request)
+        error = None
+        if not name:
+            error = "A household needs a name."
+        elif not members:
+            error = "Add at least one member (with a name)."
+        else:
+            for m in members:
+                if m["kind"]:
+                    _, err = validate_channel_value(m["kind"], m["value"])
+                    if err:
+                        error = f"{m['name']}: {err}"
+                        break
+        if error:
+            return render(
+                request,
+                "core/household_new.html",
+                {"kind_choices": CHANNEL_KIND_CHOICES, "messenger_kind": ContactChannel.Kind.MESSENGER,
+                 "name": name, "members": members or [{}, {}], "error": error},
+            )
+        with transaction.atomic():
+            household = Household.objects.create(name=name, created_by=request.user)
+            primary = None
+            for m in members:
+                contact = Contact.objects.create(
+                    name=m["name"], nickname=m["nick"], birth_year=_parse_year(m["birth"]),
+                    household=household, created_by=request.user,
+                )
+                if m["kind"]:
+                    value, _ = validate_channel_value(m["kind"], m["value"])
+                    ContactChannel.objects.create(
+                        contact=contact, kind=m["kind"], value=value, is_preferred=True,
+                        source=ContactChannel.Source.ORGANIZER, status=ContactChannel.Status.ACTIVE,
+                    )
+                if m["primary"] or primary is None:
+                    # Chosen primary wins; otherwise the first member is a sane default.
+                    primary = primary if (primary and not m["primary"]) else contact
+            household.primary_contact = primary
+            household.save(update_fields=["primary_contact", "updated_at"])
+        return _contacts_redirect(f"Created household {household.name} ({len(members)} members)")
+
+    return render(
+        request,
+        "core/household_new.html",
+        {"kind_choices": CHANNEL_KIND_CHOICES, "messenger_kind": ContactChannel.Kind.MESSENGER,
+         "name": "", "members": [{}, {}], "error": None},
+    )
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def household_edit(request, pk):
+    """Rename a household and (re)assign its primary contact (§2.2). Membership itself is
+    edited via each member's contact page — a contact's `household` field."""
+    household = get_object_or_404(
+        Household.objects.prefetch_related("members"), pk=pk
+    )
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()[:MAX_NAME_LEN]
+        if not name:
+            return render(request, "core/household_edit.html",
+                          {"household": household, "error": "A household needs a name."})
+        members = {m.pk: m for m in household.members.all()}
+        try:
+            primary_pk = int(request.POST.get("primary", ""))
+        except (TypeError, ValueError):
+            primary_pk = None
+        household.name = name
+        household.primary_contact = members.get(primary_pk)  # None clears it (or invalid pick)
+        household.save(update_fields=["name", "primary_contact", "updated_at"])
+        return _contacts_redirect(f"Updated household {household.name}")
+    return render(request, "core/household_edit.html", {"household": household, "error": None})
 
 
 # --------------------------------------------------------------------------- #

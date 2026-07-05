@@ -1,0 +1,95 @@
+{% extends "core/org_base.html" %}
+{% block title %}{% if contact %}Edit {{ contact.name }}{% else %}New contact{% endif %}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap">
+
+  <p class="crumbs"><a href="{% url 'contacts-home' %}">← contacts</a></p>
+  <h1>{% if contact %}Edit {{ contact.name }}{% else %}New contact{% endif %}</h1>
+
+  {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="card">
+      <label class="field">Name
+        <input type="text" name="name" value="{{ fields.name }}" required autofocus>
+      </label>
+      <div class="form-grid">
+        <label class="field">Nickname <span class="opt">(greeting)</span>
+          <input type="text" name="nickname" value="{{ fields.nickname }}">
+        </label>
+        <label class="field">Birth year <span class="opt">(optional)</span>
+          <input type="number" name="birth_year" value="{{ fields.birth_year }}" min="1900" placeholder="e.g. 2016">
+        </label>
+      </div>
+      <label class="field">Household
+        <select name="household">
+          <option value="">— none —</option>
+          {% for h in households %}
+          <option value="{{ h.pk }}" {% if fields.household|stringformat:'s' == h.pk|stringformat:'s' %}selected{% endif %}>{{ h.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">Tags <span class="opt">(comma-separated — “family, book club”)</span>
+        <input type="text" name="tags" value="{{ fields.tags }}">
+      </label>
+      <label class="field">Notes
+        <textarea name="notes" rows="2">{{ fields.notes }}</textarea>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="lab">Contact methods</div>
+      <p class="sub tight">One is used by default (the “preferred” dot). Messenger needs no address.</p>
+
+      <div data-rows>
+        {% for row in rows %}
+        <div class="chan-row">
+          <input type="hidden" name="channel_id" value="{{ row.id }}">
+          <input type="hidden" name="channel_delete" value="0" data-delete>
+          <label class="chan-pref" title="Preferred"><input type="radio" name="preferred" value="{{ forloop.counter0 }}" {% if row.preferred %}checked{% endif %}></label>
+          <select name="channel_kind">
+            {% for k in kind_choices %}<option value="{{ k.0 }}" {% if row.kind == k.0 %}selected{% endif %}>{{ k.1 }}</option>{% endfor %}
+          </select>
+          <input type="text" name="channel_value" value="{{ row.value }}" placeholder="email / phone">
+          <input type="text" name="channel_label" value="{{ row.label }}" placeholder="label (optional)">
+          <button type="button" class="mini-btn danger" data-remove-row title="Remove">✕</button>
+        </div>
+        {% endfor %}
+
+        <template data-row-template>
+          <div class="chan-row">
+            <input type="hidden" name="channel_id" value="">
+            <input type="hidden" name="channel_delete" value="0" data-delete>
+            <label class="chan-pref" title="Preferred"><input type="radio" name="preferred" value=""></label>
+            <select name="channel_kind">
+              {% for k in kind_choices %}<option value="{{ k.0 }}">{{ k.1 }}</option>{% endfor %}
+            </select>
+            <input type="text" name="channel_value" value="" placeholder="email / phone">
+            <input type="text" name="channel_label" value="" placeholder="label (optional)">
+            <button type="button" class="mini-btn danger" data-remove-row title="Remove">✕</button>
+          </div>
+        </template>
+      </div>
+      <button type="button" class="repeat-add" data-add-row>＋ add contact method</button>
+    </div>
+
+    {% if proposed %}
+    <div class="card">
+      <div class="lab">Awaiting your approval</div>
+      <p class="sub tight">Guest-requested channels (§2.5) — approve/reject on an event dashboard; they’re left untouched here.</p>
+      {% for ch in proposed %}
+      <div class="pick-row"><span class="cn">{{ ch.get_kind_display }}{% if ch.value %}: <code>{{ ch.value }}</code>{% endif %}</span></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="submit-row">
+      <button class="save" type="submit">{% if contact %}Save changes{% else %}Create contact{% endif %}</button>
+      <a class="btn qlink" href="{% url 'contacts-home' %}">Cancel</a>
+    </div>
+  </form>
+</main>
+{% endblock %}

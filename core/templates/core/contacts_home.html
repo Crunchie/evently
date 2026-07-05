@@ -1,0 +1,67 @@
+{% extends "core/org_base.html" %}
+{% block title %}Contacts{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap wide">
+
+  <p class="crumbs"><a href="{% url 'admin-home' %}">← home</a></p>
+  <h1>Contacts</h1>
+  <p class="meta">{{ total }} contact{{ total|pluralize }} · grouped by household. Add people here
+    instead of the Django admin — then invite them from an event’s <em>Add guests</em> screen.</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+
+  <div class="submit-row contacts-actions">
+    <a class="save" href="{% url 'contact-new' %}">＋ New contact</a>
+    <a class="save alt" href="{% url 'household-new' %}">🏠 New household</a>
+  </div>
+
+  <form method="get" class="picker-search spaced">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search contacts…" autofocus>
+    <button class="btn">Search</button>
+    {% if q %}<a class="btn qlink" href="{% url 'contacts-home' %}">Clear</a>{% endif %}
+  </form>
+
+  {% for household, members in groups %}
+  <fieldset class="pick">
+    <div class="pick-head plain">
+      <span class="pn"><a href="{% url 'household-edit' household.pk %}">{{ household.name }}</a></span>
+      <span class="pmeta">{{ members|length }} member{{ members|length|pluralize }}{% if household.primary_contact %} · primary: {{ household.primary_contact.name }}{% endif %}</span>
+      <a class="mini-btn push-right" href="{% url 'contact-new' %}?household={{ household.pk }}">＋ add member</a>
+    </div>
+    <div class="pick-members">
+      {% for c in members %}
+      <div class="pick-row">
+        <span class="cn"><a href="{% url 'contact-edit' c.pk %}">{{ c.name }}</a>{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}{% if c == household.primary_contact %} <span class="badge">primary</span>{% endif %}</span>
+        {% with ch=c.preferred_channel %}
+        <span class="cc">{% if ch %}{{ ch.get_kind_display }}{% if ch.value %}: {{ ch.value }}{% endif %}{% else %}<span class="muted">no channel</span>{% endif %}</span>
+        {% endwith %}
+      </div>
+      {% empty %}
+      <div class="pick-row"><span class="cn muted">No members yet — <a href="{% url 'contact-new' %}?household={{ household.pk }}">add one</a>.</span></div>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+
+  {% if loose %}
+  <fieldset class="pick">
+    <div class="pick-head plain"><span class="pn">Individuals</span><span class="pmeta">no household</span></div>
+    <div class="pick-members">
+      {% for c in loose %}
+      <div class="pick-row">
+        <span class="cn"><a href="{% url 'contact-edit' c.pk %}">{{ c.name }}</a>{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
+        {% with ch=c.preferred_channel %}
+        <span class="cc">{% if ch %}{{ ch.get_kind_display }}{% if ch.value %}: {{ ch.value }}{% endif %}{% else %}<span class="muted">no channel</span>{% endif %}</span>
+        {% endwith %}
+      </div>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endif %}
+
+  {% if not groups and not loose %}
+  <p class="meta">{% if q %}No contacts match “{{ q }}”.{% else %}No contacts yet — add your first one.{% endif %}</p>
+  {% endif %}
+</main>
+{% endblock %}

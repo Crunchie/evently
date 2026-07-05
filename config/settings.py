@@ -43,13 +43,15 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 INSTALLED_APPS = [
+    # First, so core/templates/admin/*.html override Django's admin templates
+    # (e.g. the admin index links to the organizer home, §2.6).
+    "core",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "core",
 ]
 
 MIDDLEWARE = [

@@ -4,7 +4,8 @@
 {% block content %}
 <main class="wrap wide">
 
-  <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a></p>
+  <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a>
+    · <a href="{% url 'contacts-home' %}">manage contacts</a></p>
   <h1>Add guests to {{ event.title }}</h1>
   <p class="meta">Tick a whole household to send everyone <strong>one shared link</strong>, or tick
     people individually for their own link. Guests already on this event aren’t listed, and
@@ -61,7 +62,7 @@
     <p class="meta">
       {% if q %}No contacts match “{{ q }}”.{% else %}
       Everyone is already invited, or there are no contacts yet —
-      <a href="{% url 'admin:core_contact_add' %}">add one</a>.{% endif %}
+      <a href="{% url 'contact-new' %}">add one</a>.{% endif %}
     </p>
     {% endif %}
 

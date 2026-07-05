@@ -1,0 +1,44 @@
+{% extends "core/org_base.html" %}
+{% block title %}Organizer home{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap wide">
+
+  <h1>Organizer home</h1>
+  <p class="meta">Jump to your contacts, open an event, or dive into the full admin.</p>
+
+  <div class="submit-row contacts-actions">
+    <a class="save" href="{% url 'contacts-home' %}">👥 Contacts ({{ contacts_count }})</a>
+    <a class="save alt" href="{% url 'admin:core_event_add' %}">＋ New event</a>
+    <a class="btn qlink" href="{% url 'admin:index' %}">⚙️ Full admin site →</a>
+  </div>
+
+  <h2 class="sec-title home-section">Upcoming events</h2>
+  {% for e in upcoming %}
+  <a class="home-event" href="{% url 'event-dashboard' e.pk %}">
+    <span class="he-main">
+      <span class="he-title">{{ e.title }}</span>
+      <span class="he-meta">{{ e.starts_at|date:"D, j M Y · g:i A" }}{% if e.location_text %} · {{ e.location_text }}{% endif %}</span>
+    </span>
+    <span class="he-side">
+      {% if e.status == 'active' %}<span class="he-count">{{ e.expected_headcount }} expected</span>{% endif %}
+      <span class="badge st-{{ e.status }}">{{ e.get_status_display }}</span>
+    </span>
+  </a>
+  {% empty %}
+  <p class="meta">No upcoming events — <a href="{% url 'admin:core_event_add' %}">create one</a>.</p>
+  {% endfor %}
+
+  {% if past %}
+  <h2 class="sec-title home-section">Earlier &amp; cancelled</h2>
+  <ul class="home-past">
+    {% for e in past %}
+    <li><a href="{% url 'event-dashboard' e.pk %}">{{ e.title }}</a>
+      <span class="he-meta">{{ e.starts_at|date:"j M Y" }}</span>
+      <span class="badge st-{{ e.status }}">{{ e.get_status_display }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if past_total > past|length %}<p class="meta"><a href="{% url 'admin:core_event_changelist' %}">See all {{ past_total }} in the admin →</a></p>{% endif %}
+  {% endif %}
+</main>
+{% endblock %}

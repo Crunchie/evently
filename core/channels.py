@@ -23,6 +23,8 @@ from urllib.parse import quote
 import phonenumbers
 import resend
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.utils import timezone
 
 from .messaging import build_message
@@ -34,6 +36,35 @@ Kind = ContactChannel.Kind
 ASSISTED_KINDS = (Kind.WHATSAPP, Kind.MESSENGER)
 # Fallback order when no preferred channel is set (or the preferred one is unusable).
 ROUTE_ORDER = (Kind.EMAIL, Kind.WHATSAPP, Kind.MESSENGER)
+# Channel kinds an organizer or guest can actually enter/request (§2.5). Telegram is a
+# schema value with no entry UI or transport yet (§10 Phase 2).
+ENTRY_KINDS = (Kind.EMAIL, Kind.WHATSAPP, Kind.MESSENGER, Kind.SMS)
+
+
+def validate_channel_value(kind: str, value: str) -> tuple[str, str | None]:
+    """Normalise + validate a channel address for the organizer contact forms and the
+    guest channel-change request (§2.5). Returns (normalised_value, error): a truthy
+    error string means reject. Email is validated; WhatsApp/SMS are parsed to E.164 via
+    the local default region so "021 555 0123" and "+64215550123" both work; Messenger
+    needs no address (value forced blank)."""
+    value = (value or "").strip()
+    if kind == Kind.EMAIL:
+        try:
+            validate_email(value)
+        except ValidationError:
+            return value, "Enter a valid email address."
+        return value, None
+    if kind in (Kind.WHATSAPP, Kind.SMS):
+        try:
+            parsed = phonenumbers.parse(value, settings.PHONE_REGION)
+        except phonenumbers.NumberParseException:
+            return value, "Enter a valid phone number."
+        if not phonenumbers.is_valid_number(parsed):
+            return value, "Enter a valid phone number."
+        return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164), None
+    if kind == Kind.MESSENGER:
+        return "", None
+    return value, "Unknown channel type."
 
 
 def _usable(channel: ContactChannel) -> bool:

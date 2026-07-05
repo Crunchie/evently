@@ -264,9 +264,15 @@ capability — a forwarded link can RSVP as that person (§8).
 - **Response history** per guest (from `rsvp_events` — who flip-flopped, when, and
   whether each change came from the guest or the organizer).
 - **Event actions:** edit (+ notify choice), cancel, clone, toggles (§2.1).
-- Everything sits behind the Access-gated admin (§8). v1 leans on the **Django admin**
-  for plain CRUD (contacts, tags, event fields — §9); the **dashboard** and the **send
-  queue** are the two hand-built organizer views that deserve polish.
+- Everything sits behind the Access-gated admin (§8). An **organizer home** at
+  `/admin/home/` is the friendly landing — jump to contacts, your upcoming events (each
+  linking to its dashboard), and out to the full Django admin; the Django admin index
+  links back to it and `admin.site.site_url` points there, so it's reachable from the
+  habitual `/admin` without remembering a URL. **Contacts, households, and their channels
+  have a hand-built flow** (§2.2 — add-contact / create-household under `/admin/contacts/`),
+  alongside the **dashboard** and the **send queue** as the polished organizer views. The
+  **Django admin** stays registered as CRUD backup for event fields, tags, and raw
+  invitation/delivery rows (§9).
 
 ### 2.7 Polls
 
@@ -810,8 +816,14 @@ needs an eventual decision: build it, or trim it from the spec.
 3. **Per-edit "notify guests / silent" choice** (§2.1, §2.6) — edits happen in the
    Django admin with no notify prompt; notifying is the separate manual **Send update**
    action on the send screen. Same outcome, different mechanism than specced.
-4. **Quick-add contact inline** while building a guest list (§2.2) — not built; new
-   contacts go through the admin's full form.
+4. **Quick-add contact inline** while building a guest list (§2.2) — *partially closed.*
+   A dedicated hand-built **Contacts section** now exists at `/admin/contacts/`
+   (`contacts_home` + `contact_new`/`contact_edit` + `household_new`/`household_edit` in
+   `views.py`): add a contact with several channels, or create a whole household + its
+   members + one contact method each + the primary contact in a **single submit** — the
+   thing the Django admin can't do (`primary_contact` needs the members to exist first).
+   So adding people no longer needs the admin. The remaining gap is *inline* quick-add on
+   the event Add-guests picker itself (create-and-invite without leaving the page).
 5. **Add a whole tag at once** (§2.2) — the event-side Add-guests picker has name
    search only. Workaround: Contacts admin → filter by tag → select all → bulk
    "invite to event" action.
