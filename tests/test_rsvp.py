@@ -78,6 +78,7 @@ def test_landing_page_is_a_styled_dead_end(client, db):
     content = resp.content.decode()
     assert "This is not the page you are looking for" in content
     assert 'class="landing"' in content  # uses the shared sunset-hero styling
+    assert 'rel="icon"' in content and "favicon.svg" in content  # every page has a favicon
 
 
 def test_revoked_page_leaks_nothing(client, event):

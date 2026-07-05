@@ -6,6 +6,8 @@
 <meta name="robots" content="noindex">
 {% load static %}
 <title>{% block title %}evently{% endblock %}</title>
+<link rel="icon" href="{% static 'core/favicon.svg' %}" type="image/svg+xml">
+<link rel="icon" href="{% static 'core/icon-192.png' %}" sizes="192x192" type="image/png">
 <link rel="stylesheet" href="{% static 'core/app.css' %}">
 {# All behaviour lives here — no inline scripts anywhere (CSP: script-src 'self', §8). #}
 <script src="{% static 'core/app.js' %}" defer></script>
