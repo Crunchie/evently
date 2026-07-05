@@ -17,16 +17,21 @@
 </header>
 
 <div class="rsvp-page">
+
+  {% if saved or channel_requested or channel_error or cancelled or past %}
+  <div class="banners">
+    {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
+    {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
+    {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
+    {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
+    {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
+  </div>
+  {% endif %}
+
   <div class="layout">
 
     <!-- DETAILS -->
     <div class="details">
-
-      {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
-      {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
-      {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
-      {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
-      {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
 
       <section class="row2">
         <div class="card">

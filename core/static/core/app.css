@@ -91,10 +91,16 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 .banner.muted { background: #f1f5f9; color: #475569; }
 
 /* ---------- guest RSVP page: two-column layout (per mockups/rsvp-guest) ---------- */
-.rsvp-page { max-width: 1080px; margin: 0 auto; padding: 0 clamp(1.2rem, 4vw, 2.5rem); }
+/* Pull the whole page up into the hero's tall bottom padding. Applying the overlap
+   here (not on .layout) means a status banner, when shown, lands right under the
+   event name — above the RSVP card, so a mobile "Saved" confirmation is visible
+   without scrolling past the glass box. */
+.rsvp-page { max-width: 1080px; margin: -6rem auto 0; padding: 0 clamp(1.2rem, 4vw, 2.5rem); position: relative; }
+.banners { margin-bottom: 1.2rem; }
+.banners .banner:last-child { margin-bottom: 0; }
 .layout {
   display: grid; grid-template-columns: 1fr; gap: 1.1rem;
-  grid-template-areas: "rsvp" "details"; margin-top: -6rem; position: relative;
+  grid-template-areas: "rsvp" "details";
 }
 @media (min-width: 900px) {
   .layout {
