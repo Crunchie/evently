@@ -21,6 +21,21 @@
   </div>
   {% endif %}
 
+  {% if bounced %}
+  <div class="banner bad bounces">
+    ⚠️ <strong>{{ bounced|length }} email{{ bounced|length|pluralize }} bounced</strong> —
+    the address didn’t accept the message. Fix the address in the contact’s channels
+    (or switch them to an assisted channel), then resend.
+    <ul>
+      {% for d in bounced %}
+      <li><strong>{{ d.invitation.display_name }}</strong> — <code>{{ d.address_used }}</code>
+        {% if d.error %}<br><span class="tinier">{{ d.error|truncatechars:140 }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {% if reminder_due %}
   <div class="banner muted reminder">
     ⏰ <strong>{{ event.title }} is nearly here.</strong> Send a day-before reminder to everyone Going / Maybe?
@@ -74,6 +89,7 @@
           </div>
         </td>
         <td><span class="badge st-{{ inv.state }}">{{ inv.get_state_display }}</span>
+          {% if inv.has_bounce %}<div class="tinier bounce-flag">⚠ email bounced — check address</div>{% endif %}
           {% if inv.opened_at %}<div class="tinier">opened {{ inv.opened_at|timesince }} ago</div>{% endif %}</td>
         <td>
           {% for attendee in inv.attendees.all %}

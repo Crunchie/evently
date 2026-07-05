@@ -297,10 +297,25 @@ def event_dashboard(request, pk):
         .annotate(last_contacted=Max("deliveries__sent_at"))
         .order_by("id")
     )
+    # Surface delivery-level bounces (§9). The invite ladder can leave the envelope at
+    # OPENED even after a bounce ("an open can't be overridden"), so a bounce would
+    # otherwise be invisible. Take each invitation's *latest* delivery and warn when it
+    # bounced — a later successful resend supersedes it and clears the warning.
+    latest_delivery = {}
+    for d in (
+        Delivery.objects.filter(invitation__event=event)
+        .select_related("invitation__contact", "invitation__household")
+        .order_by("id")
+    ):
+        latest_delivery[d.invitation_id] = d
+    bounced = [d for d in latest_delivery.values() if d.status == Delivery.Status.BOUNCED]
+    bounced_inv_ids = {d.invitation_id for d in bounced}
+
     for inv in invitations:
         inv.rsvp_url = request.build_absolute_uri(inv.rsvp_path)
         inv.route_email = bool(email_channels(inv))
         inv.route_assisted = bool(assisted_channels(inv))
+        inv.has_bounce = inv.id in bounced_inv_ids
 
     # Revoked envelopes stay visible in the table (greyed) but are out of every
     # count — uninvited guests aren't catered for (§2.2).
@@ -320,6 +335,7 @@ def event_dashboard(request, pk):
     context = {
         "event": event,
         "invitations": invitations,
+        "bounced": bounced,
         "going": by_status.get(InvitationAttendee.Rsvp.GOING, 0),
         "maybe": by_status.get(InvitationAttendee.Rsvp.MAYBE, 0),
         "cant": by_status.get(InvitationAttendee.Rsvp.CANT, 0),
@@ -664,7 +680,10 @@ def resend_webhook(request):
         if delivery:
             failed = payload["type"] == "email.failed"
             delivery.status = Delivery.Status.FAILED if failed else Delivery.Status.BOUNCED
-            delivery.error = payload["type"]
+            # Keep the provider's human reason (why it bounced) for the dashboard, not
+            # just the event name — e.g. "the account does not exist".
+            bounce = data.get("bounce") or {}
+            delivery.error = (bounce.get("message") or payload["type"])[:500]
             delivery.save(update_fields=["status", "error", "updated_at"])
             # Ladder rules apply: this can't override an open/response (§2.3).
             delivery.invitation.advance_state(Invitation.State.BOUNCED)

@@ -11,6 +11,7 @@ from core import channels
 from core.models import (
     Contact,
     ContactChannel,
+    Delivery,
     Event,
     Household,
     Invitation,
@@ -139,6 +140,40 @@ def test_event_invite_skips_already_invited(staff_client, event):
     resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [a.pk]})
     assert Invitation.objects.filter(event=event, contact=a).count() == 1  # no duplicate
     assert "msg=no+new+guests" in resp.url
+
+
+# --------------------------------------------------------------------------- #
+#  Bounce surfacing on the dashboard (§9)
+# --------------------------------------------------------------------------- #
+def test_dashboard_surfaces_bounce_even_when_invitation_opened(staff_client, event):
+    contact = contact_with_email("Typo", "wrong@x.com")
+    inv = Invitation.objects.create(event=event, contact=contact)
+    inv.advance_state(State.OPENED)  # link clicked → ladder keeps envelope above BOUNCED
+    Delivery.objects.create(
+        invitation=inv,
+        kind=Kind.EMAIL,
+        address_used="wrong@x.com",
+        status=Delivery.Status.BOUNCED,
+        error="the account does not exist",
+    )
+    resp = staff_client.get(reverse("event-dashboard", args=[event.pk]))
+    assert resp.status_code == 200
+    assert b"email bounced" in resp.content  # the row flag + banner
+    assert b"wrong@x.com" in resp.content
+    assert b"the account does not exist" in resp.content  # the human reason
+
+
+def test_dashboard_bounce_cleared_by_later_successful_delivery(staff_client, event):
+    contact = contact_with_email("Fixed", "good@x.com")
+    inv = Invitation.objects.create(event=event, contact=contact)
+    Delivery.objects.create(
+        invitation=inv, kind=Kind.EMAIL, address_used="old@x.com", status=Delivery.Status.BOUNCED
+    )
+    Delivery.objects.create(  # later resend to a corrected address succeeded
+        invitation=inv, kind=Kind.EMAIL, address_used="good@x.com", status=Delivery.Status.SENT
+    )
+    resp = staff_client.get(reverse("event-dashboard", args=[event.pk]))
+    assert b"email bounced" not in resp.content  # latest delivery is SENT → warning cleared
 
 
 # --------------------------------------------------------------------------- #
