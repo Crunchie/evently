@@ -66,6 +66,44 @@
         </section>
       </div>
       {% endif %}
+
+      {% if polls %}
+      <div>
+        <h2 class="sec-title">{{ event.host_display|default:"Your host" }} is asking…</h2>
+        {% for p in polls %}
+        <section class="card poll" id="poll-{{ p.poll.pk }}">
+          <h3>{{ p.poll.question }}</h3>
+          {% if p.can_vote %}
+          <form method="post" action="{% url 'rsvp-poll' invitation.token p.poll.pk %}">
+            {% csrf_token %}
+            {% for o in p.options %}
+            <label class="poll-opt">
+              <input type="{% if p.poll.multi_choice %}checkbox{% else %}radio{% endif %}"
+                     name="option" value="{{ o.option.pk }}" {% if o.mine %}checked{% endif %}>
+              <span class="opt-text">{{ o.option.text }}</span>
+              <span class="opt-meta">{{ o.count }}{% if o.names %} · {{ o.names|join:", " }}{% endif %}</span>
+            </label>
+            {% endfor %}
+            {% if p.poll.allow_guest_options %}
+            <label class="field">Or add your own
+              <input type="text" name="new_option" maxlength="100" placeholder="e.g. something else…">
+            </label>
+            {% endif %}
+            <button class="save" type="submit">Save {% if p.poll.multi_choice %}votes{% else %}vote{% endif %}</button>
+          </form>
+          {% else %}
+          <ul class="poll-results">
+            {% for o in p.options %}
+            <li><strong>{{ o.count }}</strong> {{ o.option.text }}{% if o.mine %} <span class="mine">✓ you</span>{% endif %}
+              {% if o.names %}<span class="opt-meta">{{ o.names|join:", " }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% if p.poll.is_closed %}<p class="sub">This poll is closed.</p>{% endif %}
+          {% endif %}
+        </section>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
 
     <!-- RSVP CARD -->

@@ -416,6 +416,65 @@ class Delivery(TimestampedModel):
         return f"{self.invitation} · {self.kind} · {self.get_status_display()}"
 
 
+# --------------------------------------------------------------------------- #
+#  Polls (§2.7)
+# --------------------------------------------------------------------------- #
+class Poll(TimestampedModel):
+    """An organizer question shown on the event's RSVP page (§2.7). One ballot per
+    envelope: a household's shared link casts one set of votes — polls gauge the
+    room's preference, not per-person headcounts (attendee RSVPs do that)."""
+
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="polls")
+    question = models.CharField(max_length=200)
+    multi_choice = models.BooleanField(default=False)  # checkboxes vs radios
+    allow_guest_options = models.BooleanField(default=True)  # guests may add options
+    is_closed = models.BooleanField(default=False)  # closed = results still shown, no voting
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    def __str__(self):
+        return f"{self.event}: {self.question}"
+
+
+class PollOption(TimestampedModel):
+    """One answer choice. Guest-added options (§2.7) record the envelope they came
+    in on (attribution + moderation); organizer-created options leave it empty."""
+
+    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name="options")
+    text = models.CharField(max_length=100)
+    added_by = models.ForeignKey(
+        Invitation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["id"]  # stable display order: creation order
+        constraints = [
+            models.UniqueConstraint(fields=["poll", "text"], name="unique_option_text_per_poll"),
+        ]
+
+    def __str__(self):
+        return f"{self.poll.question} · {self.text}"
+
+
+class PollVote(TimestampedModel):
+    """One envelope's tick on one option. Single-choice is enforced in the vote view
+    (replace-all sync) — a DB constraint alone can't see poll.multi_choice."""
+
+    option = models.ForeignKey(PollOption, on_delete=models.CASCADE, related_name="votes")
+    invitation = models.ForeignKey(Invitation, on_delete=models.CASCADE, related_name="poll_votes")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["option", "invitation"], name="one_vote_per_option_per_envelope"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.invitation} → {self.option.text}"
+
+
 class RsvpEvent(models.Model):
     """Append-only history of RSVP changes (§5). Current status is denormalized onto attendee."""
 

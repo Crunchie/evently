@@ -10,6 +10,7 @@ urlpatterns = [
     path("i/<str:token>", views.rsvp_page, name="rsvp"),
     path("i/<str:token>/calendar.ics", views.rsvp_ics, name="rsvp-ics"),
     path("i/<str:token>/channel", views.rsvp_channel_request, name="rsvp-channel"),
+    path("i/<str:token>/poll/<int:poll_pk>", views.rsvp_poll_vote, name="rsvp-poll"),
     # Provider webhooks: public but signature-verified (§8/§9).
     path("webhooks/resend", views.resend_webhook, name="resend-webhook"),
     # Organizer side: everything under /admin so one Access rule gates it all.
@@ -19,6 +20,8 @@ urlpatterns = [
     path("admin/events/<int:pk>/invite/", views.event_invite, name="event-invite"),
     path("admin/events/<int:pk>/send/", views.event_send, name="event-send"),
     path("admin/events/<int:pk>/queue/", views.event_queue, name="event-queue"),
+    path("admin/events/<int:pk>/polls/", views.event_poll_create, name="event-poll-create"),
+    path("admin/polls/<int:pk>/", views.poll_action, name="poll-action"),
     path("admin/invitations/<int:pk>/action/", views.invitation_action, name="invitation-action"),
     path(
         "admin/invitations/<int:pk>/override/",

@@ -264,6 +264,36 @@ capability — a forwarded link can RSVP as that person (§8).
   for plain CRUD (contacts, tags, event fields — §9); the **dashboard** and the **send
   queue** are the two hand-built organizer views that deserve polish.
 
+### 2.7 Polls
+
+Organizer asks the room a question ("which weekend?", "what should I cook?"); guests
+answer on their RSVP page. Decisions settled 2026-07-05:
+
+- **Created and managed from the dashboard** (question + options, one per line);
+  close / reopen, delete poll, remove individual options (removing an option deletes
+  its votes). Django admin is CRUD backup, per the usual split (§2.6).
+- **One ballot per envelope** (invitation), not per attendee: a household's shared
+  link casts one set of votes. Polls gauge the room's preference — per-person
+  headcounts are what attendee RSVPs are for. Voter names shown are the envelope's
+  display name ("The Hendersons").
+- **Per-poll single/multi toggle:** radios ("BBQ or picnic?") or checkboxes ("which
+  dates work?"), chosen at creation.
+- **Results are visible to guests** — counts + names per option, Facebook-style,
+  consistent with the guest-list toggle's spirit. The organizer always sees full
+  results on the dashboard.
+- **Guests can add their own options** (per-poll toggle, default on): live
+  immediately and auto-ticked for the adder — the trusted-guests model (§8), with
+  the dashboard's remove-option as the moderation lever. Case-insensitive dedupe
+  reuses an existing option; caps: 100 chars/option, 20 options/poll. This is the
+  app's first guest→guest content surface — autoescaping + the caps bound it.
+- **Lifecycle:** voting locks when the poll is closed, or when the event is past or
+  cancelled (same gate as RSVP edits, §2.5); results stay visible. Votes are
+  re-editable via the link any time while open; the submitted form is the whole
+  truth (unticked = removed). Revoked envelopes drop out of counts and names, like
+  every other number (§2.2).
+- **No automatic notification** on poll creation — guests see it on next visit; the
+  existing "update" send (§2.4) covers announcing it. Revisit if it grates.
+
 ## 3. Why build this — alternatives considered
 
 Honest framing: this is a hobby/ownership project with real (but modest) utility gains
@@ -373,6 +403,12 @@ one-stepper RSVP UX and simplifies headcount. **(c)** guest channel-change reque
 - **rsvp_events** — append-only history of responses (attendee, status, note, timestamp,
   and `actor` = guest / organizer, §2.3); current status + latest note are denormalized
   onto `invitation_attendees` / `invitations`.
+- **polls / poll_options / poll_votes** (§2.7) — a poll belongs to an event
+  (question, `multi_choice`, `allow_guest_options`, `is_closed`); options carry
+  `added_by` (invitation) when guest-added, empty for organizer ones (attribution +
+  moderation); votes join **option × invitation** (one ballot per envelope — §2.7),
+  unique per pair. Single-choice is enforced in the vote view's replace-all sync,
+  not the DB — a constraint can't see `multi_choice`.
 
 ### Non-obvious decisions (where the bugs live)
 

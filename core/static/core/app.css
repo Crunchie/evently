@@ -415,3 +415,36 @@ body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
   display: block; width: 100%; margin-top: .35rem; padding: .6rem .7rem;
   border: 1.5px solid var(--line); border-radius: 12px; font: inherit; color: var(--ink);
 }
+
+/* ---------- polls (§2.7): guest voting card + dashboard management ---------- */
+.poll h3 { font-size: 1.02rem; font-weight: 800; margin-bottom: .7rem; }
+.poll-opt {
+  display: flex; align-items: baseline; gap: .55rem; padding: .55rem .6rem;
+  border: 1.5px solid var(--line); border-radius: 12px; margin-bottom: .45rem;
+  cursor: pointer; font-size: .95rem;
+}
+.poll-opt:hover { border-color: #d5d5da; }
+.poll-opt:has(input:checked) { border-color: var(--coral); background: #fff7f5; }
+.poll-opt .opt-text { font-weight: 600; }
+.poll-opt .opt-meta, .poll-results .opt-meta { color: var(--muted); font-size: .82rem; margin-left: auto; text-align: right; }
+.poll .save { margin-top: .5rem; }
+.poll .field { margin-top: .5rem; }
+.poll-results { list-style: none; }
+.poll-results li { display: flex; gap: .55rem; align-items: baseline; padding: .4rem 0; border-top: 1px solid var(--line); font-size: .95rem; }
+.poll-results li:first-child { border-top: none; }
+.poll-results .mine { color: var(--going); font-size: .82rem; font-weight: 700; }
+
+/* dashboard side */
+.polls { margin-top: 1.5rem; }
+.polls h2 { font-size: 1rem; font-weight: 800; margin-bottom: .6rem; }
+.poll-block { padding: .7rem 0; border-top: 1px solid var(--line); }
+.poll-block:first-of-type { border-top: none; }
+.poll-head { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; margin-bottom: .4rem; }
+.poll-head form { margin-left: auto; display: flex; gap: .3rem; }
+.poll-row { display: flex; gap: .6rem; align-items: baseline; padding: .3rem 0; font-size: .88rem; }
+.poll-row .cnt { font-weight: 800; min-width: 1.4rem; text-align: right; }
+.poll-row form { margin-left: auto; }
+.poll-create { margin-top: .7rem; }
+.poll-create summary { font-size: .85rem; color: var(--coral); cursor: pointer; font-weight: 700; }
+.poll-create form { margin-top: .5rem; max-width: 28rem; display: flex; flex-direction: column; gap: .4rem; }
+.poll-create .check { font-size: .85rem; display: flex; gap: .4rem; align-items: center; }

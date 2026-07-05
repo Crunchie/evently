@@ -174,5 +174,59 @@
     </section>
   </div>
 
+  <section class="card polls">
+    <h2>📊 Polls</h2>
+    {% for p in polls %}
+    <div class="poll-block" id="poll-{{ p.poll.pk }}">
+      <div class="poll-head">
+        <strong>{{ p.poll.question }}</strong>
+        <span class="tinier">{{ p.poll.multi_choice|yesno:"multi-choice,single choice" }}{% if p.poll.allow_guest_options %} · guests can add options{% endif %}{% if p.poll.is_closed %} · <strong>closed</strong>{% endif %}</span>
+        <form method="post" action="{% url 'poll-action' p.poll.pk %}">
+          {% csrf_token %}
+          {% if p.poll.is_closed %}
+          <button class="mini-btn" name="action" value="reopen">Reopen</button>
+          {% else %}
+          <button class="mini-btn" name="action" value="close">Close</button>
+          {% endif %}
+          <button class="mini-btn danger" name="action" value="delete"
+            data-confirm="Delete this poll and all its votes?">Delete</button>
+        </form>
+      </div>
+      {% for o in p.options %}
+      <div class="poll-row">
+        <span class="cnt">{{ o.count }}</span>
+        <span class="opt-text">{{ o.option.text }}
+          {% if o.option.added_by %}<span class="tinier">· added by {{ o.option.added_by.display_name }}</span>{% endif %}
+          {% if o.names %}<div class="tinier">{{ o.names|join:", " }}</div>{% endif %}
+        </span>
+        <form method="post" action="{% url 'poll-action' p.poll.pk %}">
+          {% csrf_token %}<input type="hidden" name="option" value="{{ o.option.pk }}">
+          <button class="mini-btn danger" name="action" value="remove_option"
+            data-confirm="Remove “{{ o.option.text }}”{% if o.count %} and its {{ o.count }} vote{{ o.count|pluralize }}{% endif %}?">✕</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% empty %}
+    <p class="sub">No polls yet — ask the room something ("which weekend?", "what should I cook?").</p>
+    {% endfor %}
+    <details class="poll-create">
+      <summary>➕ New poll</summary>
+      <form method="post" action="{% url 'event-poll-create' event.pk %}">
+        {% csrf_token %}
+        <label class="field">Question
+          <input type="text" name="question" maxlength="200" required
+                 placeholder="e.g. What should we throw on the barbie?">
+        </label>
+        <label class="field">Options — one per line
+          <textarea name="options" rows="3" placeholder="Snags&#10;Steak&#10;Veggie skewers"></textarea>
+        </label>
+        <label class="check"><input type="checkbox" name="multi_choice" value="1"> Guests can pick several</label>
+        <label class="check"><input type="checkbox" name="allow_guest_options" value="1" checked> Guests can add their own options</label>
+        <div><button class="mini-btn ok">Create poll</button></div>
+      </form>
+    </details>
+  </section>
+
 </main>
 {% endblock %}

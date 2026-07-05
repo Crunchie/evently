@@ -17,6 +17,9 @@ from .models import (
     Household,
     Invitation,
     InvitationAttendee,
+    Poll,
+    PollOption,
+    PollVote,
     RsvpEvent,
     Tag,
 )
@@ -187,6 +190,34 @@ class DeliveryAdmin(admin.ModelAdmin):
     list_display = ("invitation", "kind", "status", "sent_at")
     list_filter = ("status", "kind")
     list_select_related = ("invitation__event", "invitation__contact", "invitation__household")
+
+
+# --- Polls (§2.7) — day-to-day management lives on the dashboard; this is CRUD backup #
+class PollOptionInline(admin.TabularInline):
+    model = PollOption
+    extra = 0
+    fields = ("text", "added_by")
+    readonly_fields = ("added_by",)  # guest attribution is set by the vote view only
+
+
+@admin.register(Poll)
+class PollAdmin(admin.ModelAdmin):
+    list_display = ("event", "question", "multi_choice", "allow_guest_options", "is_closed")
+    list_filter = ("is_closed", "event")
+    search_fields = ("question",)
+    list_select_related = ("event",)
+    inlines = [PollOptionInline]
+
+
+@admin.register(PollVote)
+class PollVoteAdmin(admin.ModelAdmin):
+    list_display = ("option", "invitation", "created_at")
+    list_select_related = (
+        "option__poll__event",
+        "invitation__event",
+        "invitation__contact",
+        "invitation__household",
+    )
 
 
 @admin.register(RsvpEvent)

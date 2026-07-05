@@ -40,6 +40,9 @@ from .models import (
     Household,
     Invitation,
     InvitationAttendee,
+    Poll,
+    PollOption,
+    PollVote,
     RsvpEvent,
     make_token,
 )
@@ -53,6 +56,9 @@ RSVP_CHOICES = {
 ORGANIZER_RSVP_CHOICES = RSVP_CHOICES | {InvitationAttendee.Rsvp.NO_REPLY}
 MAX_PLUS_ONES = 9  # absolute ceiling when the event sets no cap
 MAX_NOTE_LEN = 500
+MAX_POLL_OPTIONS = 20  # per poll, organizer + guest-added combined
+MAX_POLL_OPTION_LEN = 100  # matches PollOption.text
+MAX_POLL_QUESTION_LEN = 200  # matches Poll.question
 
 
 def _posted_pk(request, field: str) -> int:
@@ -185,8 +191,89 @@ def rsvp_page(request, token):
         "maybe_count": maybe_count,
         "google_url": google_calendar_url(event),
         "map_embed_url": google_maps_embed_url(event),
+        "polls": _poll_display(event, invitation, voting_open=can_rsvp),
     }
     return _guest_render(request, "core/rsvp.html", context)
+
+
+def _poll_display(event: Event, invitation: Invitation | None, *, voting_open: bool) -> list:
+    """Per-poll display data (§2.7): options with counts + voter names (revoked
+    envelopes excluded, like every other count) and this envelope's own ticks.
+    Shared by the guest page and the dashboard (invitation=None there)."""
+    polls = []
+    poll_qs = event.polls.prefetch_related(
+        Prefetch(
+            "options",
+            queryset=PollOption.objects.select_related("added_by__contact", "added_by__household"),
+        ),
+        Prefetch(
+            "options__votes",
+            queryset=PollVote.objects.exclude(invitation__state=Invitation.State.REVOKED)
+            .select_related("invitation__contact", "invitation__household")
+            .order_by("id"),
+        ),
+    )
+    for poll in poll_qs:
+        options = [
+            {
+                "option": option,
+                "count": len(option.votes.all()),
+                "names": [v.invitation.display_name for v in option.votes.all()],
+                "mine": invitation is not None
+                and any(v.invitation_id == invitation.pk for v in option.votes.all()),
+            }
+            for option in poll.options.all()
+        ]
+        polls.append(
+            {"poll": poll, "options": options, "can_vote": voting_open and not poll.is_closed}
+        )
+    return polls
+
+
+@require_POST
+def rsvp_poll_vote(request, token, poll_pk):
+    """Cast or refresh this envelope's ballot (§2.7). The submitted form is the whole
+    truth: unticked options are removed, ticked ones added; single-choice polls keep
+    one. A guest-typed option (when the poll allows it) is created and auto-ticked."""
+    invitation = _get_invitation(token)
+    if invitation.state == Invitation.State.REVOKED:
+        return _guest_render(request, "core/rsvp_unavailable.html", status=410)
+    event = invitation.event
+    poll = get_object_or_404(Poll, pk=poll_pk, event=event)
+    if poll.is_closed or event.status != Event.Status.ACTIVE or event.is_past:
+        resp = HttpResponseForbidden("Voting is closed for this poll.")
+        resp["Referrer-Policy"] = "no-referrer"
+        return resp
+
+    options = {o.pk: o for o in poll.options.all()}
+    selected = []
+    for raw in request.POST.getlist("option"):
+        try:
+            pk = int(raw)
+        except (TypeError, ValueError):
+            continue  # garbage ids are simply not votes
+        if pk in options and options[pk] not in selected:
+            selected.append(options[pk])
+
+    new_text = request.POST.get("new_option", "").strip()[:MAX_POLL_OPTION_LEN]
+    with transaction.atomic():
+        if new_text and poll.allow_guest_options:
+            existing = poll.options.filter(text__iexact=new_text).first()
+            if existing:
+                if existing not in selected:
+                    selected.append(existing)
+            elif len(options) < MAX_POLL_OPTIONS:  # at the cap the typed text is dropped
+                selected.append(
+                    PollOption.objects.create(poll=poll, text=new_text, added_by=invitation)
+                )
+        if not poll.multi_choice:
+            selected = selected[-1:]  # radio pick + typed option together: the typed one wins
+        PollVote.objects.filter(option__poll=poll, invitation=invitation).exclude(
+            option__in=selected
+        ).delete()
+        for option in selected:
+            PollVote.objects.get_or_create(option=option, invitation=invitation)
+    return redirect(f"{invitation.rsvp_path}#poll-{poll.pk}")
 
 
 @transaction.atomic
@@ -397,6 +484,7 @@ def event_dashboard(request, pk):
             "attendee__contact", "actor_user"
         )[:30],
         "reminder_due": reminder_due,
+        "polls": _poll_display(event, None, voting_open=False),
         "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped", "msg")}
         if request.GET.get("did")
         else None,
@@ -713,6 +801,59 @@ def channel_request_action(request, pk):
         name = channel.contact.name
         channel.delete()
         return _dash(event_pk, action, msg=f"Request from {name} rejected")
+    return HttpResponseForbidden("Unknown action")
+
+
+# --------------------------------------------------------------------------- #
+#  Polls (§2.7) — created and managed from the dashboard; guests vote on the
+#  RSVP page via their capability link, one ballot per envelope.
+# --------------------------------------------------------------------------- #
+@staff_member_required
+@require_POST
+def event_poll_create(request, pk):
+    """Create a poll from the dashboard (§2.7): question + one option per line.
+    Options are deduped case-insensitively and capped; blank lines drop out."""
+    event = get_object_or_404(Event, pk=pk)
+    question = request.POST.get("question", "").strip()[:MAX_POLL_QUESTION_LEN]
+    texts: list[str] = []
+    for line in request.POST.get("options", "").splitlines():
+        text = line.strip()[:MAX_POLL_OPTION_LEN]
+        if text and text.lower() not in (t.lower() for t in texts):
+            texts.append(text)
+    texts = texts[:MAX_POLL_OPTIONS]
+    if not question or not texts:
+        return _dash(event.pk, "poll_error", msg="A poll needs a question and at least one option")
+    with transaction.atomic():
+        poll = Poll.objects.create(
+            event=event,
+            question=question,
+            multi_choice=request.POST.get("multi_choice") == "1",
+            allow_guest_options=request.POST.get("allow_guest_options") == "1",
+            created_by=request.user,
+        )
+        for text in texts:
+            PollOption.objects.create(poll=poll, text=text)
+    return _dash(event.pk, "poll_created", msg=f"Poll created: {question}")
+
+
+@staff_member_required
+@require_POST
+def poll_action(request, pk):
+    """Dashboard poll controls (§2.7): close/reopen, delete, remove one option."""
+    poll = get_object_or_404(Poll.objects.select_related("event"), pk=pk)
+    event_pk = poll.event_id
+    action = request.POST.get("action", "")
+    if action in ("close", "reopen"):
+        poll.is_closed = action == "close"
+        poll.save(update_fields=["is_closed", "updated_at"])
+        return _dash(event_pk, action, msg=f"Poll {'closed' if poll.is_closed else 'reopened'}")
+    if action == "delete":
+        poll.delete()
+        return _dash(event_pk, action, msg="Poll deleted")
+    if action == "remove_option":
+        option = get_object_or_404(PollOption, pk=_posted_pk(request, "option"), poll=poll)
+        option.delete()  # votes CASCADE — a removed option takes its ticks with it
+        return _dash(event_pk, action, msg=f"Option removed: {option.text}")
     return HttpResponseForbidden("Unknown action")
 
 

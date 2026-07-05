@@ -318,7 +318,15 @@ env (`LITESTREAM_*` in compose + `.env.example`), uncomment the s3 block in
         s3 replica, re-drill restore against R2 (§9).
   - [ ] Invite a **real** gathering end-to-end from the phone; co-host OTP login.
 
-### Phase 8 — Later / maybe (design-doc Phase 2) ⬜
+### Phase 8 — Polls ✅ (2026-07-05)
+Design + decisions in §2.7 of the design summary. `Poll`/`PollOption`/`PollVote`
+(migration 0003): one ballot per envelope, per-poll single/multi toggle, results
+(counts + names) visible to guests, guest-added options live immediately with
+dedupe + caps (100 chars, 20 options). Dashboard: create form + results +
+close/reopen/delete/remove-option; guest voting on the RSVP page via
+`/i/<token>/poll/<pk>`; admin registration as CRUD backup. `tests/test_polls.py`.
+
+### Phase 9 — Later / maybe (design-doc Phase 2) ⬜
 Automated channels as new spokes (Telegram, then SMS); recurring events
 (`RECURRENCE-ID`); optional event **itinerary/"The plan"** field (from the mockup). Build
 only on demand.
