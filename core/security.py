@@ -18,6 +18,9 @@ import re
 STRICT_CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "connect-src 'self'; manifest-src 'self'; font-src 'self'; "
+    # The guest "Getting there" map is a keyless Google-Maps embed (§2.5); its iframe
+    # 301s maps.google.com → www.google.com, so both are framed. Nothing else is.
+    "frame-src https://maps.google.com https://www.google.com; "
     "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 DJANGO_ADMIN_CSP = (

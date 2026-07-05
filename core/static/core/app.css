@@ -27,29 +27,39 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 
 /* ---------- hero ---------- */
 .hero {
-  padding: 1.2rem clamp(1.2rem, 4vw, 2.5rem) 3.2rem; color: #fff;
+  padding: 1.4rem clamp(1.2rem, 4vw, 2.5rem) 7.5rem; color: #fff;
   background:
     radial-gradient(120% 90% at 15% 10%, #ffcf94 0%, rgba(255, 207, 148, 0) 45%),
     radial-gradient(120% 110% at 88% 15%, #f26aa0 0%, rgba(242, 106, 160, 0) 50%),
     radial-gradient(130% 120% at 75% 100%, #6f4a9e 0%, rgba(111, 74, 158, 0) 60%),
     linear-gradient(135deg, #f6a057 0%, #ef5f86 45%, #7a4fa2 100%);
 }
-.topline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.2rem; }
+.hero-body { max-width: 1080px; margin: 0 auto; }
+.topline {
+  display: flex; justify-content: space-between; align-items: center;
+  max-width: 1080px; margin: 0 auto 3rem;
+}
 .brand { font-weight: 800; font-size: 1.1rem; opacity: .95; }
 .greet {
   font-size: .85rem; font-weight: 600; padding: .4rem .8rem; border-radius: 999px;
   background: rgba(255, 255, 255, .2); backdrop-filter: blur(8px);
 }
-.chips { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
+.chips { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .chip {
+  display: inline-flex; align-items: center; gap: .5rem;
   font-size: .78rem; font-weight: 700; padding: .4rem .8rem; border-radius: 999px;
   background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .25);
   backdrop-filter: blur(10px);
 }
+.chip.host { padding-left: .45rem; }
+.chip .av {
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; background: #fff; color: var(--coral);
+  display: grid; place-items: center; font-weight: 800; font-size: .75rem;
+}
 .chip.date { text-transform: uppercase; letter-spacing: .02em; }
 .hero h1 {
-  font-size: clamp(2.1rem, 6vw, 3.4rem); font-weight: 900; line-height: 1.05;
-  max-width: 16ch; text-shadow: 0 2px 30px rgba(80, 30, 60, .25);
+  font-size: clamp(2.3rem, 6vw, 3.8rem); font-weight: 900; line-height: 1.03;
+  max-width: 14ch; text-shadow: 0 2px 30px rgba(80, 30, 60, .25);
 }
 
 /* ---------- layout + cards ---------- */
@@ -80,9 +90,55 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 .banner.bad { background: #fee2e2; color: var(--cant); }
 .banner.muted { background: #f1f5f9; color: #475569; }
 
-/* ---------- RSVP form ---------- */
-.rsvp { box-shadow: var(--shadow); }
+/* ---------- guest RSVP page: two-column layout (per mockups/rsvp-guest) ---------- */
+.rsvp-page { max-width: 1080px; margin: 0 auto; padding: 0 clamp(1.2rem, 4vw, 2.5rem); }
+.layout {
+  display: grid; grid-template-columns: 1fr; gap: 1.1rem;
+  grid-template-areas: "rsvp" "details"; margin-top: -6rem; position: relative;
+}
+@media (min-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr 360px; grid-template-areas: "details rsvp";
+    gap: 1.4rem; align-items: start;
+  }
+  .details { margin-top: 2rem; }
+}
+.details { grid-area: details; display: flex; flex-direction: column; gap: 1.4rem; }
+.details .row2 { margin-bottom: 0; }
+.details .card { margin-bottom: 0; }
+.sec-title { font-size: 1.15rem; font-weight: 800; margin: 0 0 .7rem; }
+
+/* map card — keyless Google Maps embed */
+.map { padding: 0; overflow: hidden; position: relative; height: 240px; background: #e7ebe6; }
+.map iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.map .loc { position: absolute; bottom: 14px; left: 14px; background: #fff; border-radius: 12px;
+  padding: .45rem .75rem; font-size: .82rem; font-weight: 600; box-shadow: var(--shadow-sm);
+  color: var(--ink); max-width: calc(100% - 28px); }
+
+/* ---------- RSVP form (glass sidebar) ---------- */
+.rsvp {
+  grid-area: rsvp; background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(20px) saturate(1.3); border: 1px solid rgba(255, 255, 255, .6);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.35rem; margin: 0;
+}
+@media (min-width: 900px) { .rsvp { position: sticky; top: 1.5rem; } }
 .rsvp h2 { font-size: 1.15rem; font-weight: 800; margin-bottom: 1rem; }
+.divider { height: 1px; background: var(--line); margin: 1.2rem 0; }
+.coming-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .8rem; }
+.coming-head h3 { font-size: .95rem; font-weight: 800; }
+.coming-head .cnt { font-size: .82rem; color: var(--muted); }
+.guest { display: flex; align-items: center; gap: .7rem; padding: .35rem 0; }
+.guest .av { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: .82rem; flex: none; background: var(--coral); }
+.guest:nth-child(4n+2) .av { background: #6d5bd0; }
+.guest:nth-child(4n+3) .av { background: #12a594; }
+.guest:nth-child(4n)   .av { background: #e0912f; }
+.guest .gn { font-weight: 600; font-size: .92rem; flex: 1; }
+.guest .gs { font-size: .8rem; color: var(--muted); }
+.channel-toggle { margin-top: .2rem; }
+.channel-toggle summary { cursor: pointer; font-size: .88rem; font-weight: 700; }
+.channel-toggle .opt { font-weight: 400; color: var(--muted); }
+.footnote { text-align: center; color: var(--muted); font-size: .8rem; padding: 2.5rem 1rem 3rem; }
 .member { padding: .6rem 0; }
 .member + .member { border-top: 1px solid var(--line); }
 .mname { font-weight: 700; font-size: .95rem; margin-bottom: .5rem; }
@@ -130,6 +186,9 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
   padding: .25rem .75rem; font-size: .85rem;
 }
 .cal { display: flex; gap: .6rem; margin-bottom: 1.2rem; }
+.rsvp .cal { margin: 1rem 0 0; }
+.rsvp .save { margin-top: .9rem; }
+.rsvp .final { margin-top: .2rem; }
 .btn {
   flex: 1; text-align: center; padding: .8rem; border: 1.5px solid var(--line);
   border-radius: 14px; background: #fff; color: var(--ink); font-weight: 700; font-size: .92rem;

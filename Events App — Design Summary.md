@@ -531,9 +531,12 @@ roughly by what actually matters here.
    *rendered to other people*. Escape/sanitize all of it; set a strict
    **Content-Security-Policy**. The most likely real bug given multiple viewers.
 3. **Capability-URL hygiene.** Tokens in URLs leak via `Referer` headers, server logs,
-   browser history, and screenshots. Mitigate: `Referrer-Policy: no-referrer` on the
+   browser history, and screenshots. Mitigate: `Referrer-Policy: same-origin` on the
    RSVP page, never log full tokens, HTTPS only, high entropy so brute-forcing is
-   infeasible. Rate limiting is done **at the edge, not in app code**: one Cloudflare
+   infeasible. (`same-origin`, not `no-referrer`: the latter makes browsers send
+   `Origin: null` on the guest POSTs, which Django's HTTPS CSRF check rejects → 403.
+   `same-origin` still sends nothing cross-origin, so the token never leaves our origin.)
+   Rate limiting is done **at the edge, not in app code**: one Cloudflare
    WAF rate-limiting rule on `/i/*` (the free plan includes one rule) throttles
    token-guessing and abuse before it reaches the homelab. It covers the RSVP endpoint
    and the channel-change endpoint in one rule; the organizer side needs none (Access

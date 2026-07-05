@@ -41,7 +41,7 @@ def test_fresh_page_renders_and_marks_opened(client, event):
     content = resp.content.decode()
     assert "Summer BBQ" in content
     assert "Hi Alex" in content
-    assert resp["Referrer-Policy"] == "no-referrer"
+    assert resp["Referrer-Policy"] == "same-origin"
 
     inv.refresh_from_db()
     assert inv.opened_at is not None
@@ -188,12 +188,12 @@ def test_guest_list_toggle(client, db):
 
     other = single_invitation(event, name="Tom Wilson")
     content = client.get(other.rsvp_path).content.decode()
-    assert "Who's going" in content
+    assert "Who's coming" in content
     assert "Priya" in content and "Patel" not in content  # first names only (§2.1)
 
     hidden = make_event(show_guest_list=False)
     inv = single_invitation(hidden)
-    assert "Who's going" not in client.get(inv.rsvp_path).content.decode()
+    assert "Who's coming" not in client.get(inv.rsvp_path).content.decode()
 
 
 # ---------------------------------------------------------------- calendar
@@ -220,3 +220,33 @@ def test_ics_unavailable_when_revoked(client, event):
     inv = single_invitation(event)
     inv.advance_state(Invitation.State.REVOKED)
     assert client.get(f"{inv.rsvp_path}/calendar.ics").status_code == 410
+
+
+# ------------------------------------------------------------------- map embed
+def test_map_embed_from_pasted_place_url(db):
+    from core.ics import google_maps_embed_url
+
+    ev = make_event(
+        location_text="4B Melville Place, Onehunga",
+        location_url="https://www.google.co.nz/maps/place/4B+Melville+Place,+Onehunga,+Auckland+1061/",
+    )
+    # Reuses the pasted URL's (more precise) place query, output=embed so it can be framed.
+    assert google_maps_embed_url(ev) == (
+        "https://maps.google.com/maps?q=4B%20Melville%20Place%2C%20Onehunga%2C%20Auckland%201061&output=embed"
+    )
+
+
+def test_map_embed_falls_back_to_address_text(db):
+    from core.ics import google_maps_embed_url
+
+    assert google_maps_embed_url(make_event(location_url="", location_text="1 Main St")) == (
+        "https://maps.google.com/maps?q=1%20Main%20St&output=embed"
+    )
+    assert google_maps_embed_url(make_event(location_url="", location_text="")) == ""
+
+
+def test_rsvp_page_renders_map_iframe(client, event):
+    resp = client.get(single_invitation(event).rsvp_path)
+    content = resp.content.decode()
+    assert "Getting there" in content
+    assert "output=embed" in content and "<iframe" in content

@@ -7,140 +7,170 @@
     <span class="brand">evently</span>
     <span class="greet">Hi {{ invitation.greeting }} 👋</span>
   </div>
-  <div class="chips">
-    {% if event.host_display %}<span class="chip">Hosted by {{ event.host_display }}</span>{% endif %}
-    <span class="chip date">{{ event.starts_at|date:"D j M · g:i A" }}</span>
+  <div class="hero-body">
+    <div class="chips">
+      {% if event.host_display %}<span class="chip host"><span class="av">{{ event.host_display|first|upper }}</span> Hosted by {{ event.host_display }}</span>{% endif %}
+      <span class="chip date">{{ event.starts_at|date:"D j M · g:i A" }}</span>
+    </div>
+    <h1>{{ event.title }}</h1>
   </div>
-  <h1>{{ event.title }}</h1>
 </header>
 
-<main class="wrap">
+<div class="rsvp-page">
+  <div class="layout">
 
-  {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
-  {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
-  {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
-  {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
-  {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
+    <!-- DETAILS -->
+    <div class="details">
 
-  <section class="row2">
-    <div class="card">
-      <div class="lab">When</div>
-      <div class="big">{{ event.starts_at|date:"D, j M Y" }}</div>
-      <div class="sub">{{ event.starts_at|date:"g:i A" }}{% if event.ends_at %} – {{ event.ends_at|date:"g:i A" }}{% endif %}</div>
-    </div>
-    <div class="card">
-      <div class="lab">Where</div>
-      <div class="big">{{ event.location_text|default:"To be confirmed" }}</div>
-      {% if event.location_url %}<div class="sub"><a href="{{ event.location_url }}" target="_blank" rel="noopener">Open in maps ↗</a></div>{% endif %}
-    </div>
-  </section>
+      {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
+      {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
+      {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
+      {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
+      {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
 
-  {% if event.description %}
-  <section class="card about">{{ event.description|linebreaksbr }}</section>
-  {% endif %}
-
-  <section class="card rsvp">
-    {% if can_rsvp %}
-      <h2>{% if household %}Who's coming from your household?{% else %}Will you be there?{% endif %}</h2>
-      <form method="post">
-        {% csrf_token %}
-        {% for attendee in attendees %}
-        <div class="member">
-          {% if household %}<div class="mname">{{ attendee.contact.greeting_name }}</div>{% endif %}
-          <div class="choices">
-            <label class="choice going">
-              <input type="radio" name="status_{{ attendee.pk }}" value="going"
-                     {% if attendee.rsvp_status == "going" %}checked{% endif %}>
-              <span>✓ Going</span>
-            </label>
-            <label class="choice maybe">
-              <input type="radio" name="status_{{ attendee.pk }}" value="maybe"
-                     {% if attendee.rsvp_status == "maybe" %}checked{% endif %}>
-              <span>~ Maybe</span>
-            </label>
-            <label class="choice cant">
-              <input type="radio" name="status_{{ attendee.pk }}" value="cant"
-                     {% if attendee.rsvp_status == "cant" %}checked{% endif %}>
-              <span>✕ Can't</span>
-            </label>
-          </div>
+      <section class="row2">
+        <div class="card">
+          <div class="lab">When</div>
+          <div class="big">{{ event.starts_at|date:"D, j M Y" }}</div>
+          <div class="sub">{{ event.starts_at|date:"g:i A" }}{% if event.ends_at %} – {{ event.ends_at|date:"g:i A" }}{% endif %}</div>
         </div>
-        {% endfor %}
+        <div class="card">
+          <div class="lab">Where</div>
+          <div class="big">{{ event.location_text|default:"To be confirmed" }}</div>
+          {% if event.location_url %}<div class="sub"><a href="{{ event.location_url }}" target="_blank" rel="noopener">Open in maps ↗</a></div>{% endif %}
+        </div>
+      </section>
 
-        {% if event.allow_plus_ones %}
-        <label class="field">Bringing anyone extra? (plus-ones)
-          <input type="number" name="plus_ones" min="0" max="{{ plus_cap }}" value="{{ invitation.plus_ones }}">
-        </label>
-        {% endif %}
-
-        <label class="field">A note for the hosts <span class="opt">(optional)</span>
-          <textarea name="note" rows="2" maxlength="500"
-            placeholder="e.g. we'll be a little late / bringing a pavlova">{{ invitation.latest_note }}</textarea>
-        </label>
-
-        <button class="save" type="submit">Save {% if household %}our{% else %}my{% endif %} RSVP</button>
-      </form>
-    {% else %}
-      <h2>{% if household %}Your household's RSVP{% else %}Your RSVP{% endif %}</h2>
-      <ul class="final">
-        {% for attendee in attendees %}
-        <li>{{ attendee.contact.greeting_name }}:
-          <strong class="s-{{ attendee.rsvp_status }}">{{ attendee.get_rsvp_status_display }}</strong></li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  </section>
-
-  {% if going_names %}
-  <section class="card who">
-    <h3>Who's going ({{ going_names|length }})</h3>
-    <div class="pills">{% for name in going_names %}<span class="pill">{{ name }}</span>{% endfor %}</div>
-  </section>
-  {% endif %}
-
-  {% if not cancelled %}
-  <section class="cal">
-    <a class="btn" href="{% url 'rsvp-ics' invitation.token %}">📥 Download .ics</a>
-    <a class="btn" href="{{ google_url }}" target="_blank" rel="noopener">🗓️ Google Calendar</a>
-  </section>
-  {% endif %}
-
-  {% if not cancelled and not past %}
-  <section class="card channel">
-    <details {% if channel_error %}open{% endif %}>
-      <summary>Prefer updates a different way? <span class="opt">(WhatsApp, Messenger or email)</span></summary>
-      {% if channel_pending %}
-      <p class="sub">You already have a request waiting for {{ event.host_display|default:"your host" }} to confirm — sending another replaces it.</p>
+      {% if event.description %}
+      <div>
+        <h2 class="sec-title">About</h2>
+        <section class="card about">{{ event.description|linebreaksbr }}</section>
+      </div>
       {% endif %}
-      <form method="post" action="{% url 'rsvp-channel' invitation.token %}">
-        {% csrf_token %}
-        {% if household %}
-        <label class="field">Who is this for?
-          <select name="member">
-            {% for attendee in attendees %}
-            <option value="{{ attendee.contact.pk }}">{{ attendee.contact.greeting_name }}</option>
-            {% endfor %}
-          </select>
-        </label>
+
+      {% if map_embed_url %}
+      <div>
+        <h2 class="sec-title">Getting there</h2>
+        <section class="card map">
+          <iframe src="{{ map_embed_url }}" title="Map to {{ event.location_text }}"
+                  loading="lazy" referrerpolicy="no-referrer"></iframe>
+          {% if event.location_url %}
+          <a class="loc" href="{{ event.location_url }}" target="_blank" rel="noopener">{{ event.location_text }} ↗</a>
+          {% else %}<span class="loc">{{ event.location_text }}</span>{% endif %}
+        </section>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- RSVP CARD -->
+    <aside class="rsvp">
+      {% if can_rsvp %}
+        <h2>{% if household %}Who's coming from your household?{% else %}Will you be there?{% endif %}</h2>
+        <form method="post">
+          {% csrf_token %}
+          {% for attendee in attendees %}
+          <div class="member">
+            {% if household %}<div class="mname">{{ attendee.contact.greeting_name }}</div>{% endif %}
+            <div class="choices">
+              <label class="choice going">
+                <input type="radio" name="status_{{ attendee.pk }}" value="going"
+                       {% if attendee.rsvp_status == "going" %}checked{% endif %}>
+                <span>✓ Going</span>
+              </label>
+              <label class="choice maybe">
+                <input type="radio" name="status_{{ attendee.pk }}" value="maybe"
+                       {% if attendee.rsvp_status == "maybe" %}checked{% endif %}>
+                <span>~ Maybe</span>
+              </label>
+              <label class="choice cant">
+                <input type="radio" name="status_{{ attendee.pk }}" value="cant"
+                       {% if attendee.rsvp_status == "cant" %}checked{% endif %}>
+                <span>✕ Can't</span>
+              </label>
+            </div>
+          </div>
+          {% endfor %}
+
+          {% if event.allow_plus_ones %}
+          <label class="field">Bringing anyone extra? (plus-ones)
+            <input type="number" name="plus_ones" min="0" max="{{ plus_cap }}" value="{{ invitation.plus_ones }}">
+          </label>
+          {% endif %}
+
+          <label class="field">A note for the hosts <span class="opt">(optional)</span>
+            <textarea name="note" rows="2" maxlength="500"
+              placeholder="e.g. we'll be a little late / bringing a pavlova">{{ invitation.latest_note }}</textarea>
+          </label>
+
+          <button class="save" type="submit">Save {% if household %}our{% else %}my{% endif %} RSVP</button>
+        </form>
+      {% else %}
+        <h2>{% if household %}Your household's RSVP{% else %}Your RSVP{% endif %}</h2>
+        <ul class="final">
+          {% for attendee in attendees %}
+          <li>{{ attendee.contact.greeting_name }}:
+            <strong class="s-{{ attendee.rsvp_status }}">{{ attendee.get_rsvp_status_display }}</strong></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if not cancelled %}
+      <section class="cal">
+        <a class="btn" href="{% url 'rsvp-ics' invitation.token %}">📥 Download .ics</a>
+        <a class="btn" href="{{ google_url }}" target="_blank" rel="noopener">🗓️ Google Calendar</a>
+      </section>
+      {% endif %}
+
+      {% if going_names %}
+      <div class="divider"></div>
+      <div class="coming-head">
+        <h3>Who's coming</h3>
+        <span class="cnt">{{ going_names|length }} going</span>
+      </div>
+      <div class="guest-list">
+        {% for name in going_names %}
+        <div class="guest"><span class="av">{{ name|first|upper }}</span><span class="gn">{{ name }}</span><span class="gs">Going</span></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if not cancelled and not past %}
+      <div class="divider"></div>
+      <details class="channel-toggle" {% if channel_error %}open{% endif %}>
+        <summary>Prefer updates a different way? <span class="opt">(WhatsApp, Messenger or email)</span></summary>
+        {% if channel_pending %}
+        <p class="sub">You already have a request waiting for {{ event.host_display|default:"your host" }} to confirm — sending another replaces it.</p>
         {% endif %}
-        <label class="field">Reach me on
-          <select name="kind" id="channel-kind">
-            <option value="whatsapp">WhatsApp</option>
-            <option value="messenger">Messenger</option>
-            <option value="email">Email</option>
-          </select>
-        </label>
-        {# app.js hides this when Messenger is picked — it needs no address (§6). #}
-        <label class="field" id="channel-value-field">Number / address
-          <input type="text" name="value" placeholder="e.g. 021 555 0123">
-        </label>
-        <button class="save" type="submit">Request the change</button>
-      </form>
-    </details>
-  </section>
-  {% endif %}
+        <form method="post" action="{% url 'rsvp-channel' invitation.token %}">
+          {% csrf_token %}
+          {% if household %}
+          <label class="field">Who is this for?
+            <select name="member">
+              {% for attendee in attendees %}
+              <option value="{{ attendee.contact.pk }}">{{ attendee.contact.greeting_name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {% endif %}
+          <label class="field">Reach me on
+            <select name="kind" id="channel-kind">
+              <option value="whatsapp">WhatsApp</option>
+              <option value="messenger">Messenger</option>
+              <option value="email">Email</option>
+            </select>
+          </label>
+          {# app.js hides this when Messenger is picked — it needs no address (§6). #}
+          <label class="field" id="channel-value-field">Number / address
+            <input type="text" name="value" placeholder="e.g. 021 555 0123">
+          </label>
+          <button class="save" type="submit">Request the change</button>
+        </form>
+      </details>
+      {% endif %}
+    </aside>
 
-  <p class="foot">This invite is just for {% if household %}your household{% else %}you{% endif %} — please don't share the link.</p>
+  </div>
 
-</main>
+  <p class="footnote">This invite is just for {% if household %}your household{% else %}you{% endif %} — please don't share the link.</p>
+</div>
 {% endblock %}

@@ -1,8 +1,9 @@
 """Add-to-calendar output (§2.5): a plain VEVENT .ics download + a Google Calendar
 quick-add link. Outbound only — never a reply mechanism (§1 non-goals)."""
 
+import re
 from datetime import UTC, timedelta
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, quote, unquote_plus, urlencode, urlparse
 
 from django.utils import timezone
 
@@ -72,3 +73,30 @@ def google_calendar_url(event: Event) -> str:
     return "https://calendar.google.com/calendar/render?" + urlencode(
         {k: v for k, v in params.items() if v}
     )
+
+
+def google_maps_embed_url(event: Event) -> str:
+    """Keyless Google-Maps embed `src` for the "Getting there" iframe (§2.5).
+
+    We reuse the query the organizer already pasted into `location_url` rather than
+    geocoding: a copied `/maps/place/<addr>/` or share link can't be framed directly
+    (it 200s with X-Frame-Options), but the classic `maps?q=…&output=embed` endpoint
+    can. Pull the address/coords out of the pasted URL; fall back to the plain address
+    text. Returns "" when there's nothing to show (caller omits the map)."""
+    url = event.location_url or ""
+    query = ""
+
+    place = re.search(r"/maps/place/([^/@]+)", url)
+    at = re.search(r"@(-?\d+\.\d+,-?\d+\.\d+)", url)  # …/@lat,lng,zoom
+    q_param = parse_qs(urlparse(url).query).get("q")
+    if place:
+        query = unquote_plus(place.group(1))
+    elif q_param:
+        query = q_param[0]
+    elif at:
+        query = at.group(1)
+
+    query = query or (event.location_text or "")
+    if not query:
+        return ""
+    return "https://maps.google.com/maps?q=" + quote(query) + "&output=embed"

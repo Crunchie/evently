@@ -30,7 +30,7 @@ from .channels import (
     shared_channel_pairs,
     wa_link,
 )
-from .ics import event_ics, google_calendar_url
+from .ics import event_ics, google_calendar_url, google_maps_embed_url
 from .messaging import share_payload
 from .models import (
     Contact,
@@ -76,8 +76,13 @@ def service_worker(request):
 # --------------------------------------------------------------------------- #
 def _guest_render(request, template, context=None, status=200):
     response = render(request, template, context or {}, status=status)
-    # §8: capability tokens live in the URL — never leak them via Referer.
-    response["Referrer-Policy"] = "no-referrer"
+    # §8: capability tokens live in the URL — never leak them cross-origin via Referer.
+    # "same-origin" (not "no-referrer") is deliberate: no-referrer makes browsers send
+    # Origin: null on the RSVP/channel POSTs, which Django's HTTPS CSRF check rejects
+    # (null ∉ CSRF_TRUSTED_ORIGINS, and no Referer to fall back on) → 403. "same-origin"
+    # still sends nothing cross-origin (token never leaves our origin) but supplies a real
+    # same-origin Origin so the POST passes CSRF.
+    response["Referrer-Policy"] = "same-origin"
     response["X-Robots-Tag"] = "noindex"
     return response
 
@@ -150,6 +155,7 @@ def rsvp_page(request, token):
         "plus_cap": event.plus_ones_cap or MAX_PLUS_ONES,
         "going_names": going_names,
         "google_url": google_calendar_url(event),
+        "map_embed_url": google_maps_embed_url(event),
     }
     return _guest_render(request, "core/rsvp.html", context)
 
