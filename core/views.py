@@ -889,7 +889,13 @@ def _parse_year(raw: str):
 
 
 def _blank_channel_row():
-    return {"id": "", "kind": ContactChannel.Kind.EMAIL, "value": "", "label": "", "preferred": False}
+    return {
+        "id": "",
+        "kind": ContactChannel.Kind.EMAIL,
+        "value": "",
+        "label": "",
+        "preferred": False,
+    }
 
 
 def _channel_row_from(channel: ContactChannel) -> dict:
@@ -1020,12 +1026,14 @@ def contacts_home(request):
     hand-built add-contact / add-household flows."""
     q = request.GET.get("q", "").strip()
     households = list(
-        Household.objects.select_related("primary_contact").prefetch_related(
+        Household.objects.select_related("primary_contact")
+        .prefetch_related(
             Prefetch(
                 "members",
                 queryset=Contact.objects.prefetch_related("channels").order_by("name"),
             )
-        ).order_by("name")
+        )
+        .order_by("name")
     )
     loose = list(
         Contact.objects.filter(household__isnull=True).prefetch_related("channels").order_by("name")
@@ -1039,12 +1047,18 @@ def contacts_home(request):
             members = list(hh.members.all())
             if ql in hh.name.lower():
                 groups.append((hh, members))
-            elif (hit := [m for m in members if match(m)]):
+            elif hit := [m for m in members if match(m)]:
                 groups.append((hh, hit))
         loose = [c for c in loose if match(c)]
     else:
         groups = [(hh, list(hh.members.all())) for hh in households]
-    context = {"groups": groups, "loose": loose, "q": q, "total": total, "msg": request.GET.get("msg")}
+    context = {
+        "groups": groups,
+        "loose": loose,
+        "q": q,
+        "total": total,
+        "msg": request.GET.get("msg"),
+    }
     return render(request, "core/contacts_home.html", context)
 
 
@@ -1079,7 +1093,9 @@ def _contact_form(request, contact):
             return render(
                 request,
                 "core/contact_form.html",
-                _contact_form_context(contact, rows=rows or [_blank_channel_row()], fields=fields, error=error),
+                _contact_form_context(
+                    contact, rows=rows or [_blank_channel_row()], fields=fields, error=error
+                ),
             )
         household = None
         if fields["household"]:
@@ -1099,12 +1115,21 @@ def _contact_form(request, contact):
 
     if contact is None:
         rows = [_blank_channel_row()]
-        fields = {"name": "", "nickname": "", "birth_year": "", "household": request.GET.get("household", ""), "notes": "", "tags": ""}
+        fields = {
+            "name": "",
+            "nickname": "",
+            "birth_year": "",
+            "household": request.GET.get("household", ""),
+            "notes": "",
+            "tags": "",
+        }
     else:
         active = contact.channels.filter(status=ContactChannel.Status.ACTIVE).order_by("id")
         rows = [_channel_row_from(c) for c in active] or [_blank_channel_row()]
         fields = _contact_fields_from(contact)
-    return render(request, "core/contact_form.html", _contact_form_context(contact, rows=rows, fields=fields))
+    return render(
+        request, "core/contact_form.html", _contact_form_context(contact, rows=rows, fields=fields)
+    )
 
 
 def _posted_member_rows(request) -> list[dict]:
@@ -1166,22 +1191,34 @@ def household_new(request):
             return render(
                 request,
                 "core/household_new.html",
-                {"kind_choices": CHANNEL_KIND_CHOICES, "messenger_kind": ContactChannel.Kind.MESSENGER,
-                 "name": name, "members": members or [{}, {}], "error": error},
+                {
+                    "kind_choices": CHANNEL_KIND_CHOICES,
+                    "messenger_kind": ContactChannel.Kind.MESSENGER,
+                    "name": name,
+                    "members": members or [{}, {}],
+                    "error": error,
+                },
             )
         with transaction.atomic():
             household = Household.objects.create(name=name, created_by=request.user)
             primary = None
             for m in members:
                 contact = Contact.objects.create(
-                    name=m["name"], nickname=m["nick"], birth_year=_parse_year(m["birth"]),
-                    household=household, created_by=request.user,
+                    name=m["name"],
+                    nickname=m["nick"],
+                    birth_year=_parse_year(m["birth"]),
+                    household=household,
+                    created_by=request.user,
                 )
                 if m["kind"]:
                     value, _ = validate_channel_value(m["kind"], m["value"])
                     ContactChannel.objects.create(
-                        contact=contact, kind=m["kind"], value=value, is_preferred=True,
-                        source=ContactChannel.Source.ORGANIZER, status=ContactChannel.Status.ACTIVE,
+                        contact=contact,
+                        kind=m["kind"],
+                        value=value,
+                        is_preferred=True,
+                        source=ContactChannel.Source.ORGANIZER,
+                        status=ContactChannel.Status.ACTIVE,
                     )
                 if m["primary"] or primary is None:
                     # Chosen primary wins; otherwise the first member is a sane default.
@@ -1193,8 +1230,13 @@ def household_new(request):
     return render(
         request,
         "core/household_new.html",
-        {"kind_choices": CHANNEL_KIND_CHOICES, "messenger_kind": ContactChannel.Kind.MESSENGER,
-         "name": "", "members": [{}, {}], "error": None},
+        {
+            "kind_choices": CHANNEL_KIND_CHOICES,
+            "messenger_kind": ContactChannel.Kind.MESSENGER,
+            "name": "",
+            "members": [{}, {}],
+            "error": None,
+        },
     )
 
 
@@ -1203,14 +1245,15 @@ def household_new(request):
 def household_edit(request, pk):
     """Rename a household and (re)assign its primary contact (§2.2). Membership itself is
     edited via each member's contact page — a contact's `household` field."""
-    household = get_object_or_404(
-        Household.objects.prefetch_related("members"), pk=pk
-    )
+    household = get_object_or_404(Household.objects.prefetch_related("members"), pk=pk)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()[:MAX_NAME_LEN]
         if not name:
-            return render(request, "core/household_edit.html",
-                          {"household": household, "error": "A household needs a name."})
+            return render(
+                request,
+                "core/household_edit.html",
+                {"household": household, "error": "A household needs a name."},
+            )
         members = {m.pk: m for m in household.members.all()}
         try:
             primary_pk = int(request.POST.get("primary", ""))

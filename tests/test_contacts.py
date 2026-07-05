@@ -8,7 +8,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Contact, ContactChannel, Event, Household, Tag
+from core.models import Contact, ContactChannel, Event, Household
 
 Kind = ContactChannel.Kind
 Status = ContactChannel.Status
@@ -95,8 +95,12 @@ def test_contact_new_creates_with_channels_and_tags(staff_client):
     resp = staff_client.post(
         reverse("contact-new"),
         {
-            "name": "Dave", "nickname": "Davey", "birth_year": "1990",
-            "household": "", "notes": "likes pavlova", "tags": "family, book club",
+            "name": "Dave",
+            "nickname": "Davey",
+            "birth_year": "1990",
+            "household": "",
+            "notes": "likes pavlova",
+            "tags": "family, book club",
             "channel_id": ["", ""],
             "channel_kind": ["email", "whatsapp"],
             "channel_value": ["dave@example.com", "021 123 4567"],
@@ -121,9 +125,18 @@ def test_contact_new_rejects_bad_email_without_writing(staff_client):
     resp = staff_client.post(
         reverse("contact-new"),
         {
-            "name": "Bad", "nickname": "", "birth_year": "", "household": "", "notes": "", "tags": "",
-            "channel_id": [""], "channel_kind": ["email"], "channel_value": ["not-an-email"],
-            "channel_label": [""], "channel_delete": ["0"], "preferred": "0",
+            "name": "Bad",
+            "nickname": "",
+            "birth_year": "",
+            "household": "",
+            "notes": "",
+            "tags": "",
+            "channel_id": [""],
+            "channel_kind": ["email"],
+            "channel_value": ["not-an-email"],
+            "channel_label": [""],
+            "channel_delete": ["0"],
+            "preferred": "0",
         },
     )
     assert resp.status_code == 200  # re-rendered with error, no redirect
@@ -136,9 +149,18 @@ def test_contact_new_messenger_needs_no_value(staff_client):
     staff_client.post(
         reverse("contact-new"),
         {
-            "name": "Mo", "nickname": "", "birth_year": "", "household": "", "notes": "", "tags": "",
-            "channel_id": [""], "channel_kind": ["messenger"], "channel_value": [""],
-            "channel_label": [""], "channel_delete": ["0"], "preferred": "0",
+            "name": "Mo",
+            "nickname": "",
+            "birth_year": "",
+            "household": "",
+            "notes": "",
+            "tags": "",
+            "channel_id": [""],
+            "channel_kind": ["messenger"],
+            "channel_value": [""],
+            "channel_label": [""],
+            "channel_delete": ["0"],
+            "preferred": "0",
         },
     )
     mo = Contact.objects.get(name="Mo")
@@ -161,13 +183,21 @@ def test_contact_edit_diffs_channels_and_keeps_proposed(staff_client):
     drop = ContactChannel.objects.create(contact=contact, kind=Kind.WHATSAPP, value="+64211234567")
     # A guest-requested channel awaiting approval must survive an organizer edit (§2.5).
     proposed = ContactChannel.objects.create(
-        contact=contact, kind=Kind.EMAIL, value="guest@x.com",
-        status=Status.PROPOSED, source=ContactChannel.Source.GUEST,
+        contact=contact,
+        kind=Kind.EMAIL,
+        value="guest@x.com",
+        status=Status.PROPOSED,
+        source=ContactChannel.Source.GUEST,
     )
     resp = staff_client.post(
         reverse("contact-edit", args=[contact.pk]),
         {
-            "name": "Ed", "nickname": "", "birth_year": "", "household": "", "notes": "", "tags": "",
+            "name": "Ed",
+            "nickname": "",
+            "birth_year": "",
+            "household": "",
+            "notes": "",
+            "tags": "",
             # keep (updated) + drop (delete flag) + a brand-new row
             "channel_id": [str(keep.pk), str(drop.pk), ""],
             "channel_kind": ["email", "whatsapp", "sms"],
@@ -181,7 +211,9 @@ def test_contact_edit_diffs_channels_and_keeps_proposed(staff_client):
     keep.refresh_from_db()
     assert keep.value == "new@x.com"  # updated in place, id preserved
     assert not ContactChannel.objects.filter(pk=drop.pk).exists()  # delete-flagged → gone
-    assert ContactChannel.objects.filter(pk=proposed.pk, status=Status.PROPOSED).exists()  # untouched
+    assert ContactChannel.objects.filter(
+        pk=proposed.pk, status=Status.PROPOSED
+    ).exists()  # untouched
     active = contact.channels.filter(status=Status.ACTIVE)
     assert active.filter(is_preferred=True).count() == 1  # single-preferred holds
     assert active.get(is_preferred=True).kind == Kind.SMS
@@ -207,7 +239,9 @@ def test_household_new_creates_members_channels_and_primary(staff_client):
     hh = Household.objects.get(name="The Hendersons")
     members = {c.name: c for c in hh.members.all()}
     assert set(members) == {"Dave Henderson", "Kate Henderson", "Milo"}  # blank row skipped
-    assert members["Milo"].birth_year == 2016 and not members["Milo"].channels.exists()  # kid, no channel
+    assert (
+        members["Milo"].birth_year == 2016 and not members["Milo"].channels.exists()
+    )  # kid, no channel
     assert members["Dave Henderson"].channels.get().value == "+64211234567"  # E.164
     assert members["Kate Henderson"].channels.get().is_preferred
     assert hh.primary_contact == members["Kate Henderson"]  # radio honored
@@ -219,8 +253,12 @@ def test_household_new_defaults_primary_to_first_member(staff_client):
         reverse("household-new"),
         {
             "name": "Nomads",
-            "member_name": ["First", "Second"], "member_nick": ["", ""], "member_birth": ["", ""],
-            "member_ch_kind": ["", ""], "member_ch_value": ["", ""], "member_delete": ["0", "0"],
+            "member_name": ["First", "Second"],
+            "member_nick": ["", ""],
+            "member_birth": ["", ""],
+            "member_ch_kind": ["", ""],
+            "member_ch_value": ["", ""],
+            "member_delete": ["0", "0"],
             # no "primary" posted
         },
     )
@@ -244,8 +282,12 @@ def test_household_new_bad_phone_rejected(staff_client):
         reverse("household-new"),
         {
             "name": "Oops",
-            "member_name": ["Kid"], "member_nick": [""], "member_birth": [""],
-            "member_ch_kind": ["whatsapp"], "member_ch_value": ["nonsense"], "member_delete": ["0"],
+            "member_name": ["Kid"],
+            "member_nick": [""],
+            "member_birth": [""],
+            "member_ch_kind": ["whatsapp"],
+            "member_ch_value": ["nonsense"],
+            "member_delete": ["0"],
             "primary": "0",
         },
     )
