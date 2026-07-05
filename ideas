@@ -1,12 +1,15 @@
 New
 - polls for who is bring what
 - add dietary requirements
+- add feedback button to invite page for if something is broken
+- different hero colour at top - pickable for each event
 
 Done
 - Add info pop up - show first time a user ever opens an invite + on a obvious button. Should say what the app is and why it exists
-
-Issues
 - going guests should include maybe
 - emails too short - add the details of the event to the message
-- ui does not let contact change to sms 
+- ui does not let contact change to sms
+
+Issues
+- no favicon on the web pages
 

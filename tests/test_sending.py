@@ -95,6 +95,21 @@ def test_send_invites_flow(staff_client, event, fake_send, settings):
     assert inv.deliveries.count() == 1
 
 
+def test_invite_message_carries_event_details(event):
+    from core.messaging import build_message
+
+    event.location_text = "42 Maple Avenue"
+    event.description = "Bring a plate to share!"
+    event.save()
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+
+    msg = build_message("invite", inv, "https://x.test/i/abc")
+    # when, where and the description all appear so the email stands on its own
+    assert "Summer BBQ" in msg["text"]
+    assert "42 Maple Avenue" in msg["text"] and "42 Maple Avenue" in msg["html"]
+    assert "Bring a plate to share!" in msg["text"] and "Bring a plate to share!" in msg["html"]
+
+
 def test_provider_error_marks_failed_and_keeps_state(staff_client, event, monkeypatch):
     def _boom(messages):
         raise RuntimeError("resend down")

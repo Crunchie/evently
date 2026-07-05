@@ -127,15 +127,15 @@
       </section>
       {% endif %}
 
-      {% if going_names %}
+      {% if coming %}
       <div class="divider"></div>
       <div class="coming-head">
         <h3>Who's coming</h3>
-        <span class="cnt">{{ going_names|length }} going</span>
+        <span class="cnt">{{ going_count }} going{% if maybe_count %} · {{ maybe_count }} maybe{% endif %}</span>
       </div>
       <div class="guest-list">
-        {% for name in going_names %}
-        <div class="guest"><span class="av">{{ name|first|upper }}</span><span class="gn">{{ name }}</span><span class="gs">Going</span></div>
+        {% for g in coming %}
+        <div class="guest"><span class="av">{{ g.name|first|upper }}</span><span class="gn">{{ g.name }}</span><span class="gs s-{{ g.status }}">{{ g.status|capfirst }}</span></div>
         {% endfor %}
       </div>
       {% endif %}
@@ -161,6 +161,7 @@
           <label class="field">Reach me on
             <select name="kind" id="channel-kind">
               <option value="whatsapp">WhatsApp</option>
+              <option value="sms">SMS / text</option>
               <option value="messenger">Messenger</option>
               <option value="email">Email</option>
             </select>

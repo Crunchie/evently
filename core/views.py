@@ -134,17 +134,26 @@ def rsvp_page(request, token):
         return redirect(f"{invitation.rsvp_path}?saved=1")
 
     attendees = list(invitation.attendees.all())
-    going_names = []
+    coming = []
+    going_count = maybe_count = 0
     if event.show_guest_list:
-        # Uninvited (revoked) guests never appear, whatever their last answer was.
-        going_names = [
-            a.contact.greeting_name
+        # Everyone who's said going or maybe (going first). Uninvited (revoked)
+        # guests never appear, whatever their last answer was.
+        coming = [
+            {"name": a.contact.greeting_name, "status": a.rsvp_status}
             for a in InvitationAttendee.objects.filter(
-                invitation__event=event, rsvp_status=InvitationAttendee.Rsvp.GOING
+                invitation__event=event,
+                rsvp_status__in=(
+                    InvitationAttendee.Rsvp.GOING,
+                    InvitationAttendee.Rsvp.MAYBE,
+                ),
             )
             .exclude(invitation__state=Invitation.State.REVOKED)
             .select_related("contact")
+            .order_by("rsvp_status", "contact__name")  # "going" sorts before "maybe"
         ]
+        going_count = sum(c["status"] == InvitationAttendee.Rsvp.GOING for c in coming)
+        maybe_count = len(coming) - going_count
 
     context = {
         "invitation": invitation,
@@ -161,7 +170,9 @@ def rsvp_page(request, token):
             status=ContactChannel.Status.PROPOSED
         ).exists(),
         "plus_cap": event.plus_ones_cap or MAX_PLUS_ONES,
-        "going_names": going_names,
+        "coming": coming,
+        "going_count": going_count,
+        "maybe_count": maybe_count,
         "google_url": google_calendar_url(event),
         "map_embed_url": google_maps_embed_url(event),
     }
@@ -245,6 +256,7 @@ def rsvp_channel_request(request, token):
         ContactChannel.Kind.EMAIL,
         ContactChannel.Kind.WHATSAPP,
         ContactChannel.Kind.MESSENGER,
+        ContactChannel.Kind.SMS,
     ):
         return redirect(f"{invitation.rsvp_path}?channel_error=1")
 
@@ -261,7 +273,7 @@ def rsvp_channel_request(request, token):
             validate_email(value)
         except ValidationError:
             return redirect(f"{invitation.rsvp_path}?channel_error=1")
-    elif kind == ContactChannel.Kind.WHATSAPP:
+    elif kind in (ContactChannel.Kind.WHATSAPP, ContactChannel.Kind.SMS):
         try:
             parsed = phonenumbers.parse(value, settings.PHONE_REGION)
         except phonenumbers.NumberParseException:

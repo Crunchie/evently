@@ -26,9 +26,13 @@ def _subject_and_text(kind: str, invitation: Invitation, url: str) -> tuple[str,
 
     if kind == "invite":
         subject = f"You're invited — {event.title}"
+        details = f"📅 {when}\n\n📍 {where}\n\n"
+        if event.description:
+            details += f"{event.description.strip()}\n\n"
         text = (
             f"Hi {greeting} 👋\n\n"
-            f"{host} would love to see you at {event.title} — {when}, {where}.\n\n"
+            f"{host} would love to see you at {event.title}.\n\n"
+            f"{details}"
             f"See the details and let them know if you can make it:\n{url}"
         )
     elif kind == "nudge":

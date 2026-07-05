@@ -289,12 +289,27 @@ def test_guest_requests_whatsapp_normalised_to_e164(client, event):
     assert not proposed.is_preferred
 
 
+def test_guest_requests_sms_normalised_to_e164(client, event):
+    inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Dave"))
+    resp = client.post(
+        reverse("rsvp-channel", args=[inv.token]),
+        {"kind": "sms", "value": "021 123 4567"},
+    )
+    assert resp.status_code == 302 and "channel_requested=1" in resp["Location"]
+
+    proposed = inv.contact.channels.get()
+    assert proposed.kind == Kind.SMS
+    assert proposed.value == "+64211234567"  # normalised like WhatsApp
+    assert proposed.status == ContactChannel.Status.PROPOSED
+
+
 def test_guest_request_validation_rejects_bad_input(client, event):
     inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Dave"))
     for payload in (
         {"kind": "email", "value": "not-an-email"},
         {"kind": "whatsapp", "value": "12"},
-        {"kind": "sms", "value": "+64211234567"},  # unsupported kind
+        {"kind": "sms", "value": "12"},  # invalid number
+        {"kind": "carrier-pigeon", "value": "coop 3"},  # unsupported kind
     ):
         resp = client.post(reverse("rsvp-channel", args=[inv.token]), payload)
         assert "channel_error=1" in resp["Location"]

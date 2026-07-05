@@ -204,10 +204,17 @@ def test_guest_list_toggle(client, db):
     going_att = going_inv.attendees.get()
     client.post(going_inv.rsvp_path, {f"status_{going_att.pk}": "going"})
 
+    # a "maybe" guest is shown too, tallied separately from the going count
+    maybe_inv = single_invitation(event, name="Raj Kumar")
+    maybe_att = maybe_inv.attendees.get()
+    client.post(maybe_inv.rsvp_path, {f"status_{maybe_att.pk}": "maybe"})
+
     other = single_invitation(event, name="Tom Wilson")
     content = client.get(other.rsvp_path).content.decode()
     assert "Who's coming" in content
     assert "Priya" in content and "Patel" not in content  # first names only (§2.1)
+    assert "Raj" in content  # maybe guests appear in the list
+    assert "1 going" in content and "1 maybe" in content
 
     hidden = make_event(show_guest_list=False)
     inv = single_invitation(hidden)
