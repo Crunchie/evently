@@ -62,6 +62,24 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
   max-width: 14ch; text-shadow: 0 2px 30px rgba(80, 30, 60, .25);
 }
 
+/* ---------- landing (bare apex "/") — same sunset hero, deliberate dead-end ---------- */
+.landing {
+  min-height: 100vh; display: grid; place-items: center; text-align: center;
+  color: #fff; padding: 2rem clamp(1.2rem, 4vw, 2.5rem);
+  background:
+    radial-gradient(120% 90% at 15% 10%, #ffcf94 0%, rgba(255, 207, 148, 0) 45%),
+    radial-gradient(120% 110% at 88% 15%, #f26aa0 0%, rgba(242, 106, 160, 0) 50%),
+    radial-gradient(130% 120% at 75% 100%, #6f4a9e 0%, rgba(111, 74, 158, 0) 60%),
+    linear-gradient(135deg, #f6a057 0%, #ef5f86 45%, #7a4fa2 100%);
+}
+.landing-inner { max-width: 32rem; }
+.landing .brand { font-size: 1.1rem; font-weight: 800; opacity: .95; }
+.landing h1 {
+  font-size: clamp(2rem, 6vw, 3rem); font-weight: 900; line-height: 1.05;
+  margin: 1.1rem 0 .8rem; text-shadow: 0 2px 30px rgba(80, 30, 60, .25);
+}
+.landing p { font-size: 1rem; line-height: 1.6; opacity: .9; max-width: 32ch; margin: 0 auto; }
+
 /* ---------- layout + cards ---------- */
 .wrap { max-width: 40rem; margin: 0 auto; padding: 1.2rem clamp(1.2rem, 4vw, 2.5rem) 3rem; }
 .wrap.wide { max-width: 68rem; }

@@ -59,6 +59,14 @@ def healthz(request):
     return JsonResponse({"status": "ok"})
 
 
+def landing(request):
+    """The bare apex "/". The app has no public front door — guests arrive on their
+    own capability link (/i/<token>) and organizers on /admin. So this is a deliberate
+    dead-end: a styled "nothing to see here" rather than a bare 404 for anyone (or any
+    bot) who hits the root."""
+    return render(request, "core/landing.html")
+
+
 def service_worker(request):
     """The organizer PWA's service worker (§7). A worker's scope can't exceed its
     script's path, so it's served under /admin/ (not /static/) — which also means

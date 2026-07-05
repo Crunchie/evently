@@ -62,6 +62,14 @@ def test_unknown_token_404(client, db):
     assert client.get("/i/not-a-real-token").status_code == 404
 
 
+def test_landing_page_is_a_styled_dead_end(client, db):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    content = resp.content.decode()
+    assert "This is not the page you are looking for" in content
+    assert 'class="landing"' in content  # uses the shared sunset-hero styling
+
+
 def test_revoked_page_leaks_nothing(client, event):
     inv = single_invitation(event)
     inv.advance_state(State.REVOKED)
