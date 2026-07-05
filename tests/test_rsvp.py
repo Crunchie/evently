@@ -63,7 +63,7 @@ def test_invite_page_has_info_popup(client, event):
     # auto-opens it once per device and re-opens it on click.
     inv = single_invitation(event)
     content = client.get(inv.rsvp_path).content.decode()
-    assert 'data-info-open' in content  # the "What's this?" header control
+    assert "data-info-open" in content  # the "What's this?" header control
     assert 'id="info-modal"' in content
     assert "vibe-coded my own alternative" in content  # a phrase from the note
 

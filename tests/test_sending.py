@@ -85,7 +85,9 @@ def test_send_invites_flow(staff_client, event, fake_send, settings):
     assert "You're invited" in message["subject"] and "Summer BBQ" in message["subject"]
     assert inv.rsvp_path in message["text"]
     # List-Unsubscribe present for deliverability (mailto → reply-to inbox).
-    assert message["headers"]["List-Unsubscribe"] == "<mailto:hosts@example.com?subject=unsubscribe>"
+    assert (
+        message["headers"]["List-Unsubscribe"] == "<mailto:hosts@example.com?subject=unsubscribe>"
+    )
 
     # idempotent: nothing pending anymore → second send is a no-op
     resp = staff_client.post(send_url(event), {"action": "invites"})
