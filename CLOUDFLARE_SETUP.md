@@ -160,6 +160,35 @@ you'll also add a **Webhook** (Resend → Webhooks) pointing at
 and `email.failed`** (the only events the handler acts on), and copy its **signing
 secret** into `.env` (variable lands with Phase 4).
 
+## 5a. Reply-To inbox via Cloudflare Email Routing (Phase 4)
+
+Resend only **sends** — it can't receive a reply. So `EMAIL_REPLY_TO` needs an address
+on the sending domain that forwards to a real inbox. Cloudflare **Email Routing** (free,
+unlimited forwarding) does the receiving half. Both live in the same zone and don't
+collide: Resend's records sit on `send.` and `resend._domainkey`; Email Routing claims
+the **root MX** and **root SPF**, which Resend never uses.
+
+> Why bother: a freemail `EMAIL_REPLY_TO` (e.g. `you@gmail.com`) while `EMAIL_FROM` is a
+> custom domain trips the spam-filter heuristic **"Freemail in Reply-To, but not From"**.
+> A same-domain reply-to clears it.
+
+1. Zone → **Email → Email Routing → Get started**. Accept the **auto-added DNS records**:
+   - **MX** at root → `route1/2/3.mx.cloudflare.net`
+   - **TXT SPF** at root → `v=spf1 include:_spf.mx.cloudflare.net ~all`
+2. **Routing rules → Custom addresses → Create address**:
+   `replies@<yourdomain>` → **Send to** → `mcardlesam@gmail.com`.
+   Cloudflare emails that inbox a **verify** link — click it.
+3. `.env`: `EMAIL_REPLY_TO=replies@<yourdomain>`. Redeploy; test a reply lands in Gmail.
+
+Two things to watch when accepting the auto-added records:
+
+- **Only one `v=spf1` TXT is allowed per name.** The root has no SPF today (Resend's SPF
+  is on `send.`), so Email Routing adds cleanly. If it ever flags an existing root SPF,
+  merge both `include:`s into one record rather than keeping two.
+- Leave Resend's `send.` **MX** and `resend._domainkey` **TXT** untouched — those are the
+  sending side. Email Routing only manages the root MX + root SPF and the return path
+  Resend uses (`send.`) keeps its own SPF, so outbound deliverability is unaffected.
+
 ## 5b. R2 bucket for Litestream backups (Phase 7)
 
 The SQLite database replicates continuously off-box via Litestream (§9 of the design
@@ -193,7 +222,7 @@ doc). Cloudflare R2 is the natural bucket: same account, S3-compatible, free tie
 | `CF_ACCESS_AUD` | step 3d (application AUD tag) |
 | `RESEND_API_KEY` | step 5 (Resend dashboard) |
 | `EMAIL_FROM` | your pick, e.g. `Sam & Kate <invites@yourdomain.com>` |
-| `EMAIL_REPLY_TO` | an address **on the `EMAIL_FROM` domain** (e.g. `replies@yourdomain.com`) forwarded to your personal inbox — a freemail reply-to (gmail/outlook/…) while From is a custom domain trips spam filters ("Freemail in Reply-To, but not From"); `manage.py check` warns via `core.W001` |
+| `EMAIL_REPLY_TO` | an address **on the `EMAIL_FROM` domain** (e.g. `replies@yourdomain.com`) forwarded to your personal inbox via Email Routing (§5a) — a freemail reply-to (gmail/outlook/…) while From is a custom domain trips spam filters ("Freemail in Reply-To, but not From") |
 
 ## 7. Verification checklist
 
