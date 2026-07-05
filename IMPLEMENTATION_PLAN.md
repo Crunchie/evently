@@ -336,9 +336,10 @@ only on demand.
 ## Open decisions still needed
 - [x] **Domain name** — `samandmonevents.party`, bought 2026-07-04 via Cloudflare
       Registrar (see CLOUDFLARE_SETUP.md §8).
-- [ ] **Confirm §2 defaults** — plus-ones on, show-guest-list off, no RSVP cutoff, silent
-      uninvite, cover images deferred, household RSVP editable by any link-holder,
-      `birth_year` field for kids kept or dropped.
+- [x] **Confirm §2 defaults** — de facto confirmed in production: plus-ones on,
+      show-guest-list off, no RSVP cutoff, silent uninvite, cover images deferred,
+      household RSVP editable by any link-holder. (`birth_year` stays in the schema but
+      is rendered nowhere — design doc §13.)
 
 ## Differences from `../keep` (intentional)
 - **Django, not FastAPI/SQLModel** — decided in §9 for the free admin + batteries.
@@ -352,27 +353,29 @@ only on demand.
 
 ## What's left (single source of truth, 2026-07-05)
 
-All application code through Phase 7 is **built, tested (95 green), and deployed** to
-the VM. Everything below is either a dashboard/phone action only the organizer can do,
-or on-demand future work. Ordered: do the ⚠️ items before inviting anyone real.
+All application code through Phase 8 (polls) is **built, tested (135 green), and
+deployed** to the VM. Everything below is either a dashboard/phone action only the
+organizer can do, or on-demand future work. Ordered: do the ⚠️ items before inviting
+anyone real.
 
 ### Cloudflare dashboard
 - [ ] ⚠️ **Fix the WAF rate-limit rule** — verified NOT firing (150 hits on `/i/junk`,
       zero 429s). Check it exists on the zone, is *deployed* (not draft), and matches
       *URI Path starts with `/i/`*. Re-test per CLOUDFLARE_SETUP.md §4.
-- [ ] **R2 bucket for backups** — create private `evently-backups` + scoped token,
-      fill `LITESTREAM_*` in `.env`, uncomment the s3 block in `litestream.yml`,
-      `docker compose up -d --build`, then re-run the restore drill against R2
-      (steps: CLOUDFLARE_SETUP.md §5b; the file-replica drill already passed).
+- [x] **R2 bucket for backups — configured** (verified 2026-07-05: the s3 replica is
+      live in `litestream.yml` and `LITESTREAM_*` are filled in `.env`).
+      - [ ] Remaining: **re-run the restore drill against R2** (steps:
+        CLOUDFLARE_SETUP.md §5b; the file-replica drill already passed).
 - [ ] Fill the two blank rows in the CLOUDFLARE_SETUP.md §8 record table
       (allow-listed emails; Access session duration).
 
 ### Resend dashboard
-- [ ] ⚠️ **Create the delivery webhook** → `https://samandmonevents.party/webhooks/resend`,
-      subscribed to **`email.bounced`, `email.complained`, `email.failed`** (all the
-      handler acts on; other events are ignored). Copy its signing secret into `.env` as
-      `RESEND_WEBHOOK_SECRET`, redeploy. Until then these are rejected fail-closed
-      (invisible, not broken).
+- [x] **Delivery webhook — configured** (verified 2026-07-05: `RESEND_WEBHOOK_SECRET`
+      is filled in `.env`). Target `https://samandmonevents.party/webhooks/resend`,
+      events the handler acts on: `email.bounced`, `email.complained`, `email.failed`.
+      - [ ] Remaining: **confirm events actually arrive** — check the webhook shows
+        deliveries in the Resend dashboard (or bounce a test send) rather than trusting
+        the secret alone.
 - [ ] Confirm the domain shows **Verified** (the app's API key is send-only, so this
       can't be checked from here), then **send yourself a real test invite** from the
       send screen and check DKIM/SPF pass headers in Gmail (`Show original`).

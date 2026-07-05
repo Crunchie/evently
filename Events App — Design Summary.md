@@ -6,16 +6,18 @@ platform. Create an event once, send personal invites over whatever channel each
 actually uses (Messenger, WhatsApp, email), and watch the RSVPs land in one place
 instead of scattered across DMs, texts, and "did you see my message?"
 
-> Status: early design. This doc captures decisions and rationale from initial scoping.
-> Flesh out the `TODO` sections with Claude Code.
+> Status: **built and deployed** (Phases 0–8, live at `samandmonevents.party`). This doc
+> is the spec + rationale record, kept current as decisions land; **§13 records where
+> the spec and the built app still differ** (audited 2026-07-05).
 >
 > **Visual mockups** of the approved UI direction live in `mockups/` (self-contained
 > HTML, open in a browser): `rsvp-guest.html` and `rsvp-household.html` (guest RSVP pages
 > — sunset-gradient hero + frosted RSVP card, the agreed look), and `dashboard.html`
-> (organizer dashboard, older Pico styling, not yet restyled to match).
+> (organizer dashboard, older Pico styling — historical; the built dashboard has its own
+> styling in `static/core/app.css`).
 >
 > **Build plan:** `IMPLEMENTATION_PLAN.md` (phased, with gates; uv tooling).
-> **Data model:** drafted in `core/models.py`.
+> **Data model:** implemented in `core/models.py`.
 
 ---
 
@@ -43,7 +45,7 @@ your data, it costs ~$0 to run, and people don't need an account to RSVP.
    reached: Messenger, WhatsApp, email).
 3. Hit send. The app picks the right channel per person and delivers a personal invite —
    a link to their own RSVP page — over that channel.
-4. Watch a live dashboard fill in — Going / Maybe / Can't, per person, in real time.
+4. Watch the dashboard fill in — Going / Maybe / Can't, per person.
 5. Send a reminder to the people who haven't responded (or to the "Going" crowd the day
    before). Edit event details and everyone gets the update.
 
@@ -60,7 +62,7 @@ your data, it costs ~$0 to run, and people don't need an account to RSVP.
 - Contact list with multiple channels per person; reusable across events.
 - Invite whole **households/families** with one link — every member still counted (§2.2).
 - One-click send; automatic per-person channel selection via the dispatcher.
-- Live RSVP dashboard (counts + per-guest status + response history).
+- RSVP dashboard (counts + per-guest status + response history; refresh-based).
 - Reminders and nudges to non-responders.
 
 *Invitee-facing*
@@ -224,9 +226,11 @@ The page behind their unique link is the *entire* guest-side product. No login, 
   link ticks Going / Maybe / Can't per member (kids included) and adds a shared note.
   Any member with the link can update it later **(default)**.
 - **Switch how they're reached** — a guest can request a different preferred channel
-  for this event's updates *and future invites*, choosing from **all supported
-  mechanisms: Messenger, WhatsApp, or email**, entering whatever details it needs
-  (email address; phone number for WhatsApp; Messenger needs none). The request sits
+  for this event's updates *and future invites*, choosing from **Messenger, WhatsApp,
+  SMS, or email**, entering whatever details it needs (email address; phone number for
+  WhatsApp/SMS, normalized to E.164; Messenger needs none). SMS has no send transport
+  yet (§6 Phase 2), so choosing it records the preference without joining any automated
+  path. The request sits
   **pending until the organizer approves it** — a one-tap review on the dashboard, so
   you can eyeball that `dave.new@gmail.com` plausibly belongs to Dave before it takes
   effect (§8). On approval the contact card updates and the new channel becomes their
@@ -612,10 +616,13 @@ Flask/FastAPI, because this app's shape plays to Django's batteries:
 - **ORM + migrations built in, SQLite first-class** (enable WAL mode).
 - Boring, stable, hugely documented — right property for a years-long self-hosted app.
 
-**Frontend: server-rendered Django templates + HTMX + one hand-written CSS file.**
-Server-rendered HTML is the right tool; HTMX covers the dynamic bits (dashboard updating
-as RSVPs land; the send-queue share→next flow) with no JS framework, no npm, no build
-step. PWA = a manifest + small service worker on top, stack-independent.
+**Frontend: server-rendered Django templates + one hand-written CSS file + one small
+vanilla JS file.** Server-rendered HTML is the right tool. HTMX was in the original plan
+for the dynamic bits, but plain forms + POST/redirect/GET ended up covering everything
+(send-queue share→next included), so it was never added (§13 item 7) — no JS framework,
+no npm, no build step; the only script is `static/core/app.js` (data-attribute driven,
+CSP-strict). The dashboard updates on refresh, not live-push. PWA = a manifest + small
+service worker on top, stack-independent.
 - **Guest pages use a bespoke stylesheet, not classless Pico.** The chosen guest-page
   look (see `mockups/` — sunset-gradient hero, frosted floating RSVP card, warm cards)
   is too custom for Pico's defaults, so the guest UI is hand-written CSS. This does *not*
@@ -742,45 +749,32 @@ WhatsApp Business API, at per-message rates — if pursued.
 - [x] Choose + register the domain — **decided: `samandmonevents.party`, registered
       2026-07-04**; tunnel `evently` connected. Remaining: DNS records (SPF / DKIM /
       DMARC) for Resend (runbook §5).
-- [ ] Confirm the §2 functional-spec defaults: plus-ones on by default, "show who's
-      coming" off by default, no RSVP cutoff, silent uninvite, cover images deferred,
-      household RSVP editable by any link-holder.
+- [x] Confirm the §2 functional-spec defaults — **de facto confirmed in production**
+      (plus-ones on, "show who's coming" off, no RSVP cutoff, silent uninvite, cover
+      images deferred, household RSVP editable by any link-holder; `birth_year` kept in
+      the schema but not yet rendered anywhere). Per-event toggles can flip any time.
 
-**Phase 1 build details**
-- [x] Full DDL / Django models with indexes + constraints — **drafted: `core/models.py`**
-      (conceptual model §5, fields implied by §2). Migrations still to generate.
-- [ ] Dispatcher interface so channels are pluggable — must support both *automated* and
-      *assisted* channel types (§4/§6).
-- [ ] RSVP page token scheme: pin entropy (≥128-bit), lifecycle, revocation (§8).
-- [ ] RSVP page states & copy: fresh / already-responded / changed / cancelled / revoked
-      (§2.5).
-- [ ] Guest channel-change requests: RSVP-page picker (Messenger / WhatsApp / email) →
-      `proposed` state → organizer approve/reject queue on the dashboard; approval flips
-      the contact's preferred channel (§2.5/§8).
-- [ ] WhatsApp assisted channel: `wa.me` deep-link format + prefilled text; store phone
-      numbers normalized (E.164) so the links work (§6).
-- [ ] Household RSVP UI: per-member Going/Maybe/Can't, shared note, any-holder-can-edit
-      semantics; dashboard row expansion (§2.5/§2.6).
-- [ ] Organizer RSVP override: per-attendee set status / plus-ones / note from the
-      dashboard, written to `rsvp_events` with `actor=organizer`; last-write-wins vs. the
-      guest (§2.3/§5).
-- [ ] Add-to-calendar file: generate a plain `VEVENT` `.ics` (stable `ics_uid`) + a
-      Google Calendar quick-add link on the RSVP page (§2.5).
-- [ ] Notification templates per channel: invite, nudge, update, cancellation (§2.4).
-- [ ] Assisted share: test `navigator.share({ text, url })` with the Messenger target on
-      iOS + Android (does the link carry? text + link, or link only?). Define the desktop
-      "copy invite" fallback and the send-queue UI.
-- [ ] Delivery tracking: optimistic "shared" state on share-sheet/deep-link invoke, with
-      an organizer override; treat the first RSVP-link click as the real delivery signal.
-- [ ] Consider PWA packaging so Web Share is one tap from the phone home screen (§7).
-- [ ] Security pass before first real use: CSP + escape user text (XSS),
-      `Referrer-Policy` on the RSVP page, parameterized queries, CSRF, configure the
-      Cloudflare WAF rate-limit rule on `/i/*`, secure the DB backup target (PII). See §8.
-- [ ] Cloudflare Tunnel setup + reverse proxy in front of the app container (Path A);
-      verify the app is unreachable except via the tunnel (required for the Access JWT
-      auto-login, §8).
-- [ ] Access→Django auto-login middleware: validate `Cf-Access-Jwt-Assertion`, map email
-      → Django user (§8).
+**Phase 1 build details — all built, tested, and deployed** (Phases 0–7; details and
+per-phase gates in `IMPLEMENTATION_PLAN.md`):
+- [x] Django models + migrations with indexes + constraints (`core/models.py`, §5).
+- [x] Dispatcher supporting automated (email) + assisted channels (`core/channels.py`).
+- [x] Token scheme: 256-bit `secrets.token_urlsafe`, regenerate/revoke (§8).
+- [x] RSVP page states: fresh / responded / cancelled / past / revoked (§2.5).
+- [x] Guest channel-change requests → `proposed` → dashboard approve/reject (§2.5/§8);
+      picker also offers SMS (stored only — no transport yet).
+- [x] WhatsApp `wa.me` deep links; phone numbers normalized to E.164 (§6).
+- [x] Household RSVP UI: per-member statuses, shared note, any-holder edits (§2.5).
+- [x] Organizer RSVP override with `actor=organizer` history; last-write-wins (§2.3).
+- [x] Add-to-calendar: `.ics` with stable `ics_uid` + Google Calendar link (§2.5).
+- [x] Notification templates: invite, nudge, update, cancellation, reminder (§2.4).
+- [x] Assisted share: `navigator.share` + desktop copy fallback + send queue (§6).
+- [x] Delivery tracking: optimistic SHARED; first link click is the real signal (§2.3).
+- [x] PWA: manifest + service worker, organizer side only (§7).
+- [x] Security pass: strict CSP, autoescaping audit, `Referrer-Policy`, CSRF, token
+      log-redaction, HSTS; edge WAF rate-limit rule is a Cloudflare-dashboard item
+      (status tracked in `IMPLEMENTATION_PLAN.md` "What's left").
+- [x] Cloudflare Tunnel-only ingress; no published ports (§8/§9).
+- [x] Access→Django auto-login middleware (`core/auth.py`, §8).
 
 **Later / maybe (Phase 2)**
 - [ ] Additional automated channels as new spokes: Telegram, then SMS / WhatsApp Business
@@ -799,3 +793,33 @@ WhatsApp Business API, at per-message rates — if pursued.
   Railway — no free tier ($5 one-time trial). Fly.io / Koyeb — free compute removed for
   new accounts. Render free web — spins down after 15 min (~30–50s wake); free Postgres
   expires after 30 days. Supabase free — Postgres pauses after 7 days idle.
+
+## 13. Spec vs. built — recorded gaps (audited 2026-07-05)
+
+A full audit of this doc against the deployed code found the spec accurate **except**
+for the items below: designed in §2/§9, but **not built** — and so far not missed in
+practice. The spec text above is left as written (it's still the intent); each item
+needs an eventual decision: build it, or trim it from the spec.
+
+1. **Clone event** (§2.1, §2.6) — not built. Note the doc leans on clone as the answer
+   to recurring gatherings (§5), so until it exists a repeat event means re-creating it
+   and re-picking the guest list by hand.
+2. **Delete drafts-only / past-events-archive** (§2.1) — not enforced. The Django admin
+   deletes any event (cascading its invitations and RSVP history); there is no archive
+   state. Mitigation today: don't delete non-drafts.
+3. **Per-edit "notify guests / silent" choice** (§2.1, §2.6) — edits happen in the
+   Django admin with no notify prompt; notifying is the separate manual **Send update**
+   action on the send screen. Same outcome, different mechanism than specced.
+4. **Quick-add contact inline** while building a guest list (§2.2) — not built; new
+   contacts go through the admin's full form.
+5. **Add a whole tag at once** (§2.2) — the event-side Add-guests picker has name
+   search only. Workaround: Contacts admin → filter by tag → select all → bulk
+   "invite to event" action.
+6. **Per-invitation channel override** ("Dave by email this time" — §2.2, §2.3, §2.6)
+   — `Invitation.send_channel` exists in the schema but **nothing reads it**: routing
+   always follows the contact's preferred/active channels (`core/channels.py`).
+   Decide: wire it into routing, or drop the dead field.
+7. **HTMX / live dashboard** (§9, §1) — HTMX was never adopted; plain forms +
+   POST/redirect/GET covered everything, and the dashboard updates on refresh rather
+   than live-push. §1/§9 have been corrected to match; recorded here because "add
+   HTMX" keeps *not* being needed — treat any future push for it with suspicion.
