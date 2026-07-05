@@ -193,7 +193,7 @@ doc). Cloudflare R2 is the natural bucket: same account, S3-compatible, free tie
 | `CF_ACCESS_AUD` | step 3d (application AUD tag) |
 | `RESEND_API_KEY` | step 5 (Resend dashboard) |
 | `EMAIL_FROM` | your pick, e.g. `Sam & Kate <invites@yourdomain.com>` |
-| `EMAIL_REPLY_TO` | your personal inbox |
+| `EMAIL_REPLY_TO` | an address **on the `EMAIL_FROM` domain** (e.g. `replies@yourdomain.com`) forwarded to your personal inbox — a freemail reply-to (gmail/outlook/…) while From is a custom domain trips spam filters ("Freemail in Reply-To, but not From"); `manage.py check` warns via `core.W001` |
 
 ## 7. Verification checklist
 
