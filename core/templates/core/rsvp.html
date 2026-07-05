@@ -5,6 +5,7 @@
 <header class="hero">
   <div class="topline">
     <span class="brand">evently</span>
+    <button type="button" class="whats-this" data-info-open>What's this?</button>
     <span class="greet">Hi {{ invitation.greeting }} 👋</span>
   </div>
   <div class="hero-body">
@@ -178,4 +179,23 @@
 
   <p class="footnote">This invite is just for {% if household %}your household{% else %}you{% endif %} — please don't share the link.</p>
 </div>
+
+{% comment %}
+A one-time "what is this?" note from the host, opened on first visit and via the
+"What's this?" link. app.js drives it (a native dialog element); absent, the page still works.
+{% endcomment %}
+<dialog id="info-modal" class="info-modal">
+  <div class="info-body">
+    <h2>What is this? 👋</h2>
+    <p>Hey Friends! I got tired with Facebook Events being useless (and not actually doing what it really should), 
+      so I did what anyone does in 2026 and vibe-coded my own alternative. This is it — <strong>evently</strong>.</p>
+    <p>It's private and invite-only. I set up this event and sent you your own personal
+       link — just tap <strong>Going</strong>, <strong>Maybe</strong> or
+       <strong>Can't</strong>. No sign-up or anything, should be easy as..</p>
+    <p>You can save the event to your calendar and also update your preferred contact method (email, WhatsApp, or Messenger).</p>
+    <p>Cheers, <strong>Sam</strong></p>
+    <p class="fine">Your link is just for you — please don't share it.</p>
+    <button type="button" class="save" data-info-close>Got it</button>
+  </div>
+</dialog>
 {% endblock %}

@@ -71,6 +71,36 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // --- Guest RSVP page: "what is this?" info popup ----------------------- //
+  // Auto-opens once per device (first ever visit), then only via the header
+  // "What's this?" link. localStorage isn't restricted by the CSP.
+  const infoModal = document.getElementById("info-modal");
+  if (infoModal && typeof infoModal.showModal === "function") {
+    const SEEN_KEY = "evently.infoSeen";
+    const open = () => infoModal.showModal();
+    const close = () => infoModal.close();
+
+    document.querySelectorAll("[data-info-open]").forEach((el) =>
+      el.addEventListener("click", open)
+    );
+    infoModal
+      .querySelectorAll("[data-info-close]")
+      .forEach((el) => el.addEventListener("click", close));
+    // Click on the backdrop (the <dialog> itself, outside .info-body) closes it.
+    infoModal.addEventListener("click", (e) => {
+      if (e.target === infoModal) close();
+    });
+
+    let seen = null;
+    try {
+      seen = localStorage.getItem(SEEN_KEY);
+      if (!seen) localStorage.setItem(SEEN_KEY, "1");
+    } catch (err) {
+      /* storage blocked (private mode) — just don't auto-open */
+    }
+    if (!seen) open();
+  }
+
   // --- PWA: register the organizer service worker ------------------------ //
   const swUrl = document.body.dataset.sw;
   if (swUrl && "serviceWorker" in navigator) {

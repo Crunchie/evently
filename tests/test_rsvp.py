@@ -58,6 +58,16 @@ def test_opened_at_is_first_click_only(client, event):
     assert inv.opened_at == first
 
 
+def test_invite_page_has_info_popup(client, event):
+    # The "what is this?" explainer: a header control opens the <dialog>; app.js
+    # auto-opens it once per device and re-opens it on click.
+    inv = single_invitation(event)
+    content = client.get(inv.rsvp_path).content.decode()
+    assert 'data-info-open' in content  # the "What's this?" header control
+    assert 'id="info-modal"' in content
+    assert "vibe-coded my own alternative" in content  # a phrase from the note
+
+
 def test_unknown_token_404(client, db):
     assert client.get("/i/not-a-real-token").status_code == 404
 
