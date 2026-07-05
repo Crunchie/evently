@@ -58,6 +58,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // --- Add-guests picker: whole-household selection ---------------------- //
+  // Ticking a household covers every member with the one shared link, so its
+  // members' individual boxes are checked-off and disabled (no double invite).
+  document.querySelectorAll("input[data-household]").forEach((hh) => {
+    const members = document.querySelectorAll(
+      `input[data-in-household="${hh.dataset.household}"]`
+    );
+    const sync = () => {
+      members.forEach((m) => {
+        if (hh.checked) m.checked = false;
+        m.disabled = hh.checked;
+      });
+    };
+    hh.addEventListener("change", sync);
+    sync();
+  });
+
   // --- Guest RSVP page: channel-change form (§2.5) ----------------------- //
   // Messenger needs no address — hide the value field when it's picked.
   const kindSel = document.getElementById("channel-kind");

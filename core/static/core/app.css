@@ -313,6 +313,30 @@ table.grid {
 .submit-row .save { width: auto; margin: 0; padding: .7rem 1.3rem; }
 .submit-row .qlink { flex: 0 0 auto; font-size: .9rem; padding: .6rem 1.1rem; }
 
+/* Add-guests picker: households as groups, members nested beneath. */
+.pick {
+  border: 1px solid var(--line); border-radius: 12px; background: #fff;
+  box-shadow: var(--shadow-sm); margin: 0 0 .9rem; padding: 0; overflow: hidden;
+}
+.pick-head {
+  display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; cursor: pointer;
+  padding: .8rem .9rem; background: #fafafa; border-bottom: 1px solid var(--line);
+}
+.pick-head.plain { cursor: default; }
+.pick-head input { width: 1.05rem; height: 1.05rem; cursor: pointer; align-self: center; }
+.pick-head .pn { font-weight: 800; font-size: .95rem; }
+.pick-head .pmeta { color: var(--muted); font-size: .78rem; }
+.pick-members { padding: .2rem .9rem .3rem; }
+.pick-row {
+  display: flex; align-items: center; gap: .6rem; padding: .5rem 0; cursor: pointer;
+}
+.pick-row + .pick-row { border-top: 1px solid var(--line); }
+.pick-row input { width: 1.05rem; height: 1.05rem; cursor: pointer; }
+.pick-row input:disabled { cursor: default; }
+.pick-row input:disabled ~ .cn { color: var(--muted); }
+.pick-row .cn { flex: 1; font-size: .9rem; font-weight: 600; }
+.pick-row .cc { color: var(--muted); font-size: .82rem; text-align: right; }
+
 /* send & notify page */
 body.dash .card h2 { font-size: 1.05rem; font-weight: 800; margin-bottom: .4rem; }
 body.dash .card .sub { color: var(--muted); font-size: .9rem; margin: .2rem 0 .8rem; }

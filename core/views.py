@@ -37,6 +37,7 @@ from .models import (
     ContactChannel,
     Delivery,
     Event,
+    Household,
     Invitation,
     InvitationAttendee,
     RsvpEvent,
@@ -434,23 +435,47 @@ def event_send(request, pk):
 @require_http_methods(["GET", "POST"])
 def event_invite(request, pk):
     """Add guests to this event (§2.2): the event-side counterpart to the Contacts
-    admin action. Lists contacts not yet on this event; ticking them creates one
-    invitation each (attendees + token via Invitation.save). Sending stays the
-    separate reviewed step on the send screen, where we land afterwards."""
+    admin action. Lists contacts not yet on this event, plus households you can invite
+    as a single shared-link envelope; ticking either creates the invitation (attendees
+    + token via Invitation.save). Sending stays the separate reviewed step on the send
+    screen, where we land afterwards."""
     event = get_object_or_404(Event, pk=pk)
 
     if request.method == "POST":
-        selected = Contact.objects.filter(pk__in=request.POST.getlist("contacts"))
+        created = 0
+
+        # Whole-household envelopes: one shared link covering every member (§2.5).
+        # Members of a chosen household are covered by that link, so an individual
+        # tick for them is ignored — nobody gets two invitations.
+        selected_hh = list(
+            Household.objects.filter(pk__in=request.POST.getlist("households")).prefetch_related(
+                "members"
+            )
+        )
+        already_hh = set(
+            Invitation.objects.filter(event=event, household__in=selected_hh).values_list(
+                "household_id", flat=True
+            )
+        )
+        covered_member_ids = {m.pk for hh in selected_hh for m in hh.members.all()}
+        for household in selected_hh:
+            if household.pk not in already_hh:
+                Invitation.objects.create(event=event, household=household)
+                created += 1
+
+        selected = Contact.objects.filter(pk__in=request.POST.getlist("contacts")).exclude(
+            pk__in=covered_member_ids
+        )
         already = set(
             Invitation.objects.filter(event=event, contact__in=selected).values_list(
                 "contact_id", flat=True
             )
         )
-        created = 0
         for contact in selected:
             if contact.pk not in already:  # skip anyone already invited (defensive)
                 Invitation.objects.create(event=event, contact=contact)
                 created += 1
+
         dash = reverse("event-dashboard", args=[event.pk])
         msg = f"{created} guest{'' if created == 1 else 's'} added" if created else "no new guests"
         return redirect(f"{dash}?{urlencode({'did': 'invited', 'msg': msg})}")
@@ -460,11 +485,35 @@ def event_invite(request, pk):
         Contact.objects.exclude(invitations__event=event)  # not already on this event
         .select_related("household")
         .prefetch_related("channels")
-        .order_by("name")
+        .order_by("household__name", "name")
     )
     if q:
         contacts = contacts.filter(Q(name__icontains=q) | Q(nickname__icontains=q))
-    return render(request, "core/invite.html", {"event": event, "contacts": contacts, "q": q})
+
+    # Households already invited as an envelope: their members are covered, so drop them.
+    invited_household_ids = set(
+        Invitation.objects.filter(event=event, household__isnull=False).values_list(
+            "household_id", flat=True
+        )
+    )
+    # Group the uninvited contacts under their household (offer the whole-household
+    # option there) and collect the rest as loose individuals.
+    grouped: dict = {}
+    loose = []
+    for contact in contacts:
+        household = contact.household
+        if household and household.pk not in invited_household_ids:
+            grouped.setdefault(household, []).append(contact)
+        elif household is None:
+            loose.append(contact)
+        # else: household already invited as an envelope → member is covered, hide it
+    household_groups = sorted(grouped.items(), key=lambda kv: kv[0].name.lower())
+
+    return render(
+        request,
+        "core/invite.html",
+        {"event": event, "household_groups": household_groups, "loose": loose, "q": q},
+    )
 
 
 # --------------------------------------------------------------------------- #

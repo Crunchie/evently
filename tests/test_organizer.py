@@ -142,6 +142,62 @@ def test_event_invite_skips_already_invited(staff_client, event):
     assert "msg=no+new+guests" in resp.url
 
 
+def test_event_invite_page_offers_whole_households(staff_client, event):
+    hh = Household.objects.create(name="The Hendersons")
+    Contact.objects.create(name="Jane", household=hh)
+    Contact.objects.create(name="Mark", household=hh)
+    Household.objects.create(name="Empty Nest")  # nobody to cover
+
+    content = staff_client.get(reverse("event-invite", args=[event.pk])).content.decode()
+    assert "The Hendersons" in content
+    assert f'name="households" value="{hh.pk}"' in content
+    assert "Empty Nest" not in content  # a memberless household isn't offered
+
+
+def test_event_invite_creates_one_shared_household_envelope(staff_client, event):
+    hh = Household.objects.create(name="The Hendersons")
+    Contact.objects.create(name="Jane", household=hh)
+    Contact.objects.create(name="Mark", household=hh)
+
+    resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"households": [hh.pk]})
+    assert resp.status_code == 302
+
+    inv = Invitation.objects.get(event=event, household=hh)
+    assert inv.contact_id is None  # a household envelope, not a per-person invite
+    assert inv.attendees.count() == 2  # one shared link, one attendee row per member
+
+    # already invited → ticking it again makes no duplicate
+    resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"households": [hh.pk]})
+    assert Invitation.objects.filter(event=event, household=hh).count() == 1
+    assert "msg=no+new+guests" in resp.url
+
+
+def test_event_invite_household_covers_member_no_double_invite(staff_client, event):
+    hh = Household.objects.create(name="The Hendersons")
+    jane = Contact.objects.create(name="Jane", household=hh)
+    Contact.objects.create(name="Mark", household=hh)
+
+    # household ticked *and* a member ticked individually → the household wins,
+    # the member isn't also given their own separate invitation
+    staff_client.post(
+        reverse("event-invite", args=[event.pk]),
+        {"households": [hh.pk], "contacts": [jane.pk]},
+    )
+    assert Invitation.objects.filter(event=event, household=hh).count() == 1
+    assert not Invitation.objects.filter(event=event, contact=jane).exists()
+
+
+def test_event_invite_hides_members_of_already_invited_household(staff_client, event):
+    hh = Household.objects.create(name="The Hendersons")
+    Contact.objects.create(name="Jane", household=hh)
+    Invitation.objects.create(event=event, household=hh)  # already invited as an envelope
+    Contact.objects.create(name="Solo")
+
+    content = staff_client.get(reverse("event-invite", args=[event.pk])).content.decode()
+    assert "Jane" not in content  # covered by the household link already
+    assert "Solo" in content  # an unrelated individual is still offered
+
+
 # --------------------------------------------------------------------------- #
 #  Bounce surfacing on the dashboard (§9)
 # --------------------------------------------------------------------------- #

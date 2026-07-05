@@ -6,9 +6,9 @@
 
   <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a></p>
   <h1>Add guests to {{ event.title }}</h1>
-  <p class="meta">Tick everyone you want to invite — one invitation is created per person.
-    Contacts already on this event aren’t listed. Nothing is sent here; you’ll go to the
-    send screen next.</p>
+  <p class="meta">Tick a whole household to send everyone <strong>one shared link</strong>, or tick
+    people individually for their own link. Guests already on this event aren’t listed, and
+    nothing is sent here — you’ll go to the send screen next.</p>
 
   <form method="get" class="picker-search">
     <input type="search" name="q" value="{{ q }}" placeholder="Search contacts…" autofocus>
@@ -18,37 +18,54 @@
 
   <form method="post">
     {% csrf_token %}
-    <table class="grid">
-      <thead>
-        <tr>
-          <th><input type="checkbox" id="all" onclick="for(const c of document.querySelectorAll('input[name=contacts]'))c.checked=this.checked"></th>
-          <th>Name</th><th>Household</th><th>Preferred channel</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in contacts %}
-        <tr>
-          <td><input type="checkbox" name="contacts" value="{{ c.pk }}" id="c{{ c.pk }}"></td>
-          <td><label for="c{{ c.pk }}">{{ c.name }}{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</label></td>
-          <td>{{ c.household.name|default:"—" }}</td>
-          <td>
-            {% with ch=c.preferred_channel %}
-              {% if ch %}{{ ch.get_kind_display }}: {{ ch.value }}
-              {% else %}<span class="badge bad">no channel</span>{% endif %}
-            {% endwith %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="muted">
-          {% if q %}No contacts match “{{ q }}”.{% else %}
-          Everyone is already invited, or there are no contacts yet —
-          <a href="{% url 'admin:core_contact_add' %}">add one</a>.{% endif %}
-        </td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
 
-    {% if contacts %}
+    {% for household, members in household_groups %}
+    <fieldset class="pick">
+      <label class="pick-head">
+        <input type="checkbox" name="households" value="{{ household.pk }}" data-household="{{ household.pk }}">
+        <span class="pn">{{ household.name }}</span>
+        <span class="pmeta">whole household · one shared link</span>
+      </label>
+      <div class="pick-members">
+        {% for c in members %}
+        <label class="pick-row">
+          <input type="checkbox" name="contacts" value="{{ c.pk }}" data-in-household="{{ household.pk }}">
+          <span class="cn">{{ c.name }}{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
+          {% with ch=c.preferred_channel %}
+          <span class="cc">{% if ch %}{{ ch.get_kind_display }}: {{ ch.value }}{% else %}<span class="badge bad">no channel</span>{% endif %}</span>
+          {% endwith %}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endfor %}
+
+    {% if loose %}
+    <fieldset class="pick">
+      <div class="pick-head plain"><span class="pn">Individuals</span></div>
+      <div class="pick-members">
+        {% for c in loose %}
+        <label class="pick-row">
+          <input type="checkbox" name="contacts" value="{{ c.pk }}">
+          <span class="cn">{{ c.name }}{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
+          {% with ch=c.preferred_channel %}
+          <span class="cc">{% if ch %}{{ ch.get_kind_display }}: {{ ch.value }}{% else %}<span class="badge bad">no channel</span>{% endif %}</span>
+          {% endwith %}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endif %}
+
+    {% if not household_groups and not loose %}
+    <p class="meta">
+      {% if q %}No contacts match “{{ q }}”.{% else %}
+      Everyone is already invited, or there are no contacts yet —
+      <a href="{% url 'admin:core_contact_add' %}">add one</a>.{% endif %}
+    </p>
+    {% endif %}
+
+    {% if household_groups or loose %}
     <div class="submit-row">
       <button class="save" type="submit">Add selected guests</button>
       <a class="btn qlink" href="{% url 'event-dashboard' event.pk %}">Cancel</a>
