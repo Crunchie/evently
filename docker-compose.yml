@@ -13,6 +13,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env}
       - DEBUG=0
       - DATA_DIR=/data
+      - TIME_ZONE=${TIME_ZONE:-UTC}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:?set ALLOWED_HOSTS in .env}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET:-}
