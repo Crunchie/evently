@@ -359,6 +359,39 @@ def test_guest_requests_sms_normalised_to_e164(client, event):
     assert proposed.status == ContactChannel.Status.PROPOSED
 
 
+def test_guest_requests_sms_without_spaces(client, event):
+    # 0211543991 (no spaces) is a valid NZ mobile — must be accepted, not just the
+    # spaced "021 154 3991" form (regression: guest reported no-spaces was rejected).
+    inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Dave"))
+    resp = client.post(
+        reverse("rsvp-channel", args=[inv.token]),
+        {"kind": "sms", "value": "0211543991"},
+    )
+    assert resp.status_code == 302 and "channel_requested=1" in resp["Location"]
+    proposed = inv.contact.channels.get()
+    assert proposed.kind == Kind.SMS
+    assert proposed.value == "+64211543991"
+
+
+def test_validation_error_preserves_kind_and_value(client, event):
+    # A rejected submit must reopen the form on the guest's chosen channel + typed
+    # value — not snap back to the first option (WhatsApp). Regression (§2.5).
+    inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Dave"))
+    resp = client.post(
+        reverse("rsvp-channel", args=[inv.token]),
+        {"kind": "sms", "value": "not-a-number"},
+    )
+    loc = resp["Location"]
+    assert "channel_error=1" in loc
+    assert "kind=sms" in loc
+    assert "value=not-a-number" in loc
+
+    # ...and the reopened page pre-selects SMS and keeps the typed value.
+    page = client.get(loc).content.decode()
+    assert '<option value="sms" selected>' in page
+    assert 'value="not-a-number"' in page
+
+
 def test_guest_request_validation_rejects_bad_input(client, event):
     inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Dave"))
     for payload in (
@@ -443,6 +476,57 @@ def test_reject_deletes_the_request(staff_client, event):
         reverse("channel-request-action", args=[proposed.pk]),
         {"action": "reject", "event": event.pk},
     )
+    assert not contact.channels.exists()
+
+
+def test_admin_home_lists_pending_requests(staff_client, event):
+    contact = Contact.objects.create(name="Dave")
+    inv = Invitation.objects.create(event=event, contact=contact)
+    ContactChannel.objects.create(
+        contact=contact,
+        kind=Kind.WHATSAPP,
+        value="+64211234567",
+        status=ContactChannel.Status.PROPOSED,
+        source=ContactChannel.Source.GUEST,
+        requested_via=inv,
+    )
+    content = staff_client.get(reverse("admin-home")).content.decode()
+    assert "Channel-change requests" in content
+    assert "Dave" in content
+    assert "+64211234567" in content
+
+
+def test_approve_from_home_sets_preferred_and_returns_home(staff_client, event):
+    contact = contact_with_email("Dave", "d@x.com")  # currently preferred: email
+    proposed = ContactChannel.objects.create(
+        contact=contact,
+        kind=Kind.WHATSAPP,
+        value="+64211234567",
+        status=ContactChannel.Status.PROPOSED,
+        source=ContactChannel.Source.GUEST,
+    )
+    resp = staff_client.post(
+        reverse("channel-request-action", args=[proposed.pk]),
+        {"action": "approve", "home": "1"},
+    )
+    assert resp.status_code == 302 and resp["Location"].startswith(reverse("admin-home"))
+
+    proposed.refresh_from_db()
+    assert proposed.status == ContactChannel.Status.ACTIVE and proposed.is_preferred
+    assert not contact.channels.get(kind=Kind.EMAIL).is_preferred  # displaced
+    assert channels.route_channel(contact).kind == Kind.WHATSAPP
+
+
+def test_reject_from_home_returns_home(staff_client, event):
+    contact = Contact.objects.create(name="Dave")
+    proposed = ContactChannel.objects.create(
+        contact=contact, kind=Kind.MESSENGER, status=ContactChannel.Status.PROPOSED
+    )
+    resp = staff_client.post(
+        reverse("channel-request-action", args=[proposed.pk]),
+        {"action": "reject", "home": "1"},
+    )
+    assert resp.status_code == 302 and resp["Location"].startswith(reverse("admin-home"))
     assert not contact.channels.exists()
 
 

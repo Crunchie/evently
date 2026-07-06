@@ -193,22 +193,22 @@
           <label class="field">Who is this for?
             <select name="member">
               {% for attendee in attendees %}
-              <option value="{{ attendee.contact.pk }}">{{ attendee.contact.greeting_name }}</option>
+              <option value="{{ attendee.contact.pk }}" {% if channel_member == attendee.contact.pk|stringformat:"s" %}selected{% endif %}>{{ attendee.contact.greeting_name }}</option>
               {% endfor %}
             </select>
           </label>
           {% endif %}
           <label class="field">Reach me on
             <select name="kind" id="channel-kind">
-              <option value="whatsapp">WhatsApp</option>
-              <option value="sms">SMS / text</option>
-              <option value="messenger">Messenger</option>
-              <option value="email">Email</option>
+              <option value="whatsapp" {% if channel_kind == "whatsapp" %}selected{% endif %}>WhatsApp</option>
+              <option value="sms" {% if channel_kind == "sms" %}selected{% endif %}>SMS / text</option>
+              <option value="messenger" {% if channel_kind == "messenger" %}selected{% endif %}>Messenger</option>
+              <option value="email" {% if channel_kind == "email" %}selected{% endif %}>Email</option>
             </select>
           </label>
           {# app.js hides this when Messenger is picked — it needs no address (§6). #}
           <label class="field" id="channel-value-field">Number / address
-            <input type="text" name="value" placeholder="e.g. 021 555 0123">
+            <input type="text" name="value" value="{{ channel_value }}" placeholder="e.g. 021 555 0123">
           </label>
           <button class="save" type="submit">Request the change</button>
         </form>

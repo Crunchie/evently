@@ -7,11 +7,35 @@
   <h1>Organizer home</h1>
   <p class="meta">Jump to your contacts, open an event, or dive into the full admin.</p>
 
+  {% if result %}
+  <div class="banner ok">{{ result.did|capfirst }}: {{ result.msg }}</div>
+  {% endif %}
+
   <div class="submit-row contacts-actions">
     <a class="save" href="{% url 'contacts-home' %}">👥 Contacts ({{ contacts_count }})</a>
     <a class="save alt" href="{% url 'admin:core_event_add' %}">＋ New event</a>
     <a class="btn qlink" href="{% url 'admin:index' %}">⚙️ Full admin site →</a>
   </div>
+
+  {% if pending_channels %}
+  <section class="card approvals">
+    <h2>🔁 Channel-change requests <span class="badge bad">{{ pending_channels|length }}</span></h2>
+    <p class="meta">Guests asking to be reached a different way. Approving sets it as their preferred channel for future invites.</p>
+    {% for ch in pending_channels %}
+    <div class="approval">
+      <div class="a-what">
+        <strong>{{ ch.contact.name }}</strong> → {{ ch.get_kind_display }}{% if ch.value %} · <code>{{ ch.value }}</code>{% endif %}
+        <span class="tinier">requested {{ ch.created_at|timesince }} ago{% if ch.requested_via %} via {{ ch.requested_via.event.title }}{% endif %}</span>
+      </div>
+      <form method="post" action="{% url 'channel-request-action' ch.pk %}">
+        {% csrf_token %}<input type="hidden" name="home" value="1">
+        <button class="mini-btn ok" name="action" value="approve">Approve &amp; set preferred</button>
+        <button class="mini-btn" name="action" value="reject">Reject</button>
+      </form>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
   <h2 class="sec-title home-section">Upcoming events</h2>
   {% for e in upcoming %}

@@ -185,6 +185,10 @@ def rsvp_page(request, token):
         "saved": request.GET.get("saved") == "1",
         "channel_requested": request.GET.get("channel_requested") == "1",
         "channel_error": request.GET.get("channel_error") == "1",
+        # Repopulate the channel-change form after a rejected submit (§2.5).
+        "channel_kind": request.GET.get("kind", ""),
+        "channel_value": request.GET.get("value", ""),
+        "channel_member": request.GET.get("member", ""),
         "feedback_sent": request.GET.get("feedback") == "1",
         "feedback_error": request.GET.get("feedback") == "error",
         "channel_pending": invitation.channel_requests.filter(
@@ -355,23 +359,33 @@ def rsvp_channel_request(request, token):
 
     kind = request.POST.get("kind", "")
     value = request.POST.get("value", "").strip()[:254]
+    member = request.POST.get("member", "")
+
+    def error_redirect():
+        # Carry the guest's attempt back so the reopened form keeps their chosen
+        # channel + typed value instead of snapping back to the first option (§2.5).
+        params = {"channel_error": "1", "kind": kind, "value": value}
+        if member:
+            params["member"] = member
+        return redirect(f"{invitation.rsvp_path}?{urlencode(params)}")
+
     if kind not in ENTRY_KINDS:
-        return redirect(f"{invitation.rsvp_path}?channel_error=1")
+        return error_redirect()
 
     # Whose channel: the single contact, or the chosen household member.
     if invitation.contact_id:
         contact = invitation.contact
     else:
         try:
-            contact = invitation.household.members.filter(pk=request.POST.get("member")).first()
+            contact = invitation.household.members.filter(pk=member).first()
         except ValueError:  # non-numeric member id — same clean rejection as an unknown one
             contact = None
         if contact is None:
-            return redirect(f"{invitation.rsvp_path}?channel_error=1")
+            return error_redirect()
 
     value, error = validate_channel_value(kind, value)
     if error:
-        return redirect(f"{invitation.rsvp_path}?channel_error=1")
+        return error_redirect()
 
     with transaction.atomic():
         # One pending request per person: a newer ask replaces the older one.
@@ -797,17 +811,29 @@ def channel_request_action(request, pk):
     it the contact's preferred channel — future sends follow it."""
     channel = get_object_or_404(ContactChannel, pk=pk, status=ContactChannel.Status.PROPOSED)
     action = request.POST.get("action", "")
-    # The event pk only routes the redirect — but reverse() 500s on garbage, so
-    # resolve it properly (falls back to the requesting invitation's event).
-    try:
-        event = Event.objects.filter(pk=int(request.POST.get("event", ""))).first()
-    except (TypeError, ValueError):
-        event = None
-    if event is None and channel.requested_via_id:
-        event = channel.requested_via.event
-    if event is None:
-        return HttpResponseForbidden("Unknown event")
-    event_pk = event.pk
+
+    # Where to send the organizer back to: the home page lists every request in one
+    # place (§2.5) and posts `home=1`; an event dashboard posts its `event` pk.
+    home = bool(request.POST.get("home"))
+    event_pk = None
+    if not home:
+        # The event pk only routes the redirect — but reverse() 500s on garbage, so
+        # resolve it properly (falls back to the requesting invitation's event).
+        try:
+            event = Event.objects.filter(pk=int(request.POST.get("event", ""))).first()
+        except (TypeError, ValueError):
+            event = None
+        if event is None and channel.requested_via_id:
+            event = channel.requested_via.event
+        if event is None:
+            return HttpResponseForbidden("Unknown event")
+        event_pk = event.pk
+
+    def done(did, msg):
+        if home:
+            return redirect(f"{reverse('admin-home')}?{urlencode({'did': did, 'msg': msg})}")
+        return _dash(event_pk, did, msg=msg)
+
     if action == "approve":
         with transaction.atomic():
             channel.contact.channels.filter(is_preferred=True).exclude(pk=channel.pk).update(
@@ -816,11 +842,11 @@ def channel_request_action(request, pk):
             channel.status = ContactChannel.Status.ACTIVE
             channel.is_preferred = True
             channel.save(update_fields=["status", "is_preferred", "updated_at"])
-        return _dash(event_pk, action, msg=f"{channel.contact.name} → {channel.get_kind_display()}")
+        return done(action, f"{channel.contact.name} → {channel.get_kind_display()}")
     if action == "reject":
         name = channel.contact.name
         channel.delete()
-        return _dash(event_pk, action, msg=f"Request from {name} rejected")
+        return done(action, f"Request from {name} rejected")
     return HttpResponseForbidden("Unknown action")
 
 
@@ -895,6 +921,14 @@ def admin_home(request):
         "past": past[:8],
         "past_total": len(past),
         "contacts_count": Contact.objects.count(),
+        # Every guest-requested channel change awaiting approval, in one place (§2.5) —
+        # approving here sets it as the contact's preferred channel.
+        "pending_channels": ContactChannel.objects.filter(status=ContactChannel.Status.PROPOSED)
+        .select_related("contact", "requested_via__event")
+        .order_by("created_at"),
+        "result": {k: request.GET.get(k) for k in ("did", "msg")}
+        if request.GET.get("did")
+        else None,
     }
     return render(request, "core/admin_home.html", context)
 

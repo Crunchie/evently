@@ -81,11 +81,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const valField = document.getElementById("channel-value-field");
   if (kindSel && valField) {
     const valInput = valField.querySelector("input");
-    kindSel.addEventListener("change", () => {
+    const syncKind = () => {
       valField.hidden = kindSel.value === "messenger";
       valInput.placeholder =
         kindSel.value === "email" ? "e.g. you@example.com" : "e.g. 021 555 0123";
-    });
+    };
+    kindSel.addEventListener("change", syncKind);
+    syncKind(); // reflect the pre-selected kind on load (e.g. reopened after an error)
   }
 
   // --- Guest RSVP page: <dialog> modals (info popup + feedback) ---------- //

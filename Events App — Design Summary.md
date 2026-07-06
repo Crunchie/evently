@@ -266,7 +266,10 @@ capability — a forwarded link can RSVP as that person (§8).
   nudge, resend, copy link, switch channel, **set RSVP status / plus-ones on their
   behalf** (§2.3), uninvite.
 - **Pending channel-change requests** (§2.5) queue here for one-tap approve / reject;
-  approval updates the contact card and future sends follow it.
+  approval updates the contact card and future sends follow it. The **organizer home**
+  (§2.6 landing) lists *every* pending request across all events in one place, so they
+  can be triaged without opening a specific event's dashboard; approving there sets the
+  channel as the contact's preferred and returns to the home list.
 - **Notes stream:** all guest notes in one place ("bringing pavlova") — the stuff that
   changes what you buy.
 - **Response history** per guest (from `rsvp_events` — who flip-flopped, when, and
