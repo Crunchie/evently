@@ -19,11 +19,13 @@
 
 <div class="rsvp-page">
 
-  {% if saved or channel_requested or channel_error or cancelled or past %}
+  {% if saved or channel_requested or channel_error or feedback_sent or feedback_error or cancelled or past %}
   <div class="banners">
     {% if saved %}<div class="banner ok">✓ Saved — thanks! You can change this any time from this link.</div>{% endif %}
     {% if channel_requested %}<div class="banner ok">✓ Got it — {{ event.host_display|default:"your host" }} will confirm the change.</div>{% endif %}
     {% if channel_error %}<div class="banner bad">Hmm, that didn't look right — check the address or number and try again.</div>{% endif %}
+    {% if feedback_sent %}<div class="banner ok">✓ Thanks for the feedback — it's been sent to Sam.</div>{% endif %}
+    {% if feedback_error %}<div class="banner bad">Add a quick note about what's up before sending.</div>{% endif %}
     {% if cancelled %}<div class="banner bad">This event has been cancelled.</div>
     {% elif past %}<div class="banner muted">This event has ended.</div>{% endif %}
   </div>
@@ -216,7 +218,9 @@
 
   </div>
 
-  <p class="footnote">This invite is just for {% if household %}your household{% else %}you{% endif %} — please don't share the link.</p>
+  <p class="footnote">This invite is just for {% if household %}your household{% else %}you{% endif %} — please don't share the link.<br>
+    <span class="feedback-line">Something not working? <button type="button" class="linklike" data-feedback-open>Let Sam know</button></span>
+  </p>
 </div>
 
 {% comment %}
@@ -235,6 +239,32 @@ A one-time "what is this?" note from the host, opened on first visit and via the
     <p>Cheers, <strong>Sam</strong></p>
     <p class="fine">Your link is just for you — please don't share it.</p>
     <button type="button" class="save" data-info-close>Got it</button>
+  </div>
+</dialog>
+
+{% comment %}
+Feedback modal (§2.5): opened from the subtle footer link. Auto-opens on a rejected
+submit (blank message) so the guest can try again. app.js drives it; without JS the
+link is inert but the page still works.
+{% endcomment %}
+<dialog id="feedback-modal" class="info-modal" {% if feedback_error %}data-open-on-load{% endif %}>
+  <div class="info-body">
+    <h2>Spotted a problem? 🛠️</h2>
+    <p class="fine">Something broken, or just a suggestion? Send it straight to Sam.</p>
+    <form method="post" action="{% url 'rsvp-feedback' invitation.token %}">
+      {% csrf_token %}
+      <label class="field">What's up?
+        <textarea name="message" rows="3" maxlength="2000" required
+          placeholder="e.g. the map doesn't load on my phone / typo in the address"></textarea>
+      </label>
+      <label class="field">Your email <span class="opt">(optional — only if you'd like a reply)</span>
+        <input type="email" name="reply_email" placeholder="you@example.com">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn qlink" data-feedback-close>Cancel</button>
+        <button class="save" type="submit">Send feedback</button>
+      </div>
+    </form>
   </div>
 </dialog>
 {% endblock %}

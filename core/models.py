@@ -475,6 +475,36 @@ class PollVote(TimestampedModel):
         return f"{self.invitation} → {self.option.text}"
 
 
+class Feedback(TimestampedModel):
+    """A guest's "something's broken / here's a thought" note from the RSVP page.
+
+    Deliberately durable: the record is the source of truth (viewable in the admin) and
+    an email to the organizer is a best-effort bonus (§2.5) — a provider hiccup must
+    never lose the report. `invitation` is nullable/SET_NULL so a report survives the
+    envelope being deleted; `event` is denormalized off it for easy filtering. Captured
+    context (page + user agent) is what actually helps chase down "it looks broken"."""
+
+    invitation = models.ForeignKey(
+        Invitation, null=True, blank=True, on_delete=models.SET_NULL, related_name="feedback"
+    )
+    # Denormalized so the report stays legible even if the invitation is later removed.
+    event = models.ForeignKey(
+        Event, null=True, blank=True, on_delete=models.SET_NULL, related_name="feedback"
+    )
+    message = models.TextField()
+    # Optional: how the guest is happy to be reached about it (they may not want a reply).
+    reply_email = models.EmailField(blank=True)
+    page_path = models.CharField(max_length=255, blank=True)  # where they were (Referer)
+    user_agent = models.CharField(max_length=400, blank=True)  # helps reproduce breakage
+    handled = models.BooleanField(default=False)  # organizer's "I've looked at this" flag
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Feedback #{self.pk} · {self.message[:40]}"
+
+
 class RsvpEvent(models.Model):
     """Append-only history of RSVP changes (§5). Current status is denormalized onto attendee."""
 

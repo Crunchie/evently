@@ -28,6 +28,9 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_WEBHOOK_SECRET = os.environ.get("RESEND_WEBHOOK_SECRET", "")  # Svix signing secret
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "")  # e.g. "Sam & Kate <invites@yourdomain>"
 EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", "")  # personal inbox for real replies
+# Where guest feedback ("something's broken") is emailed. Defaults to the reply-to inbox
+# — the same personal address that already fields real replies.
+FEEDBACK_EMAIL = os.environ.get("FEEDBACK_EMAIL", "") or EMAIL_REPLY_TO
 
 # Default region for parsing loosely-entered phone numbers into E.164 wa.me links
 # (§6) — "021 555 0123" needs to know it's a NZ number.

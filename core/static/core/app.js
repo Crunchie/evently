@@ -88,26 +88,31 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- Guest RSVP page: "what is this?" info popup ----------------------- //
-  // Auto-opens once per device (first ever visit), then only via the header
-  // "What's this?" link. localStorage isn't restricted by the CSP.
-  const infoModal = document.getElementById("info-modal");
-  if (infoModal && typeof infoModal.showModal === "function") {
-    const SEEN_KEY = "evently.infoSeen";
-    const open = () => infoModal.showModal();
-    const close = () => infoModal.close();
-
-    document.querySelectorAll("[data-info-open]").forEach((el) =>
+  // --- Guest RSVP page: <dialog> modals (info popup + feedback) ---------- //
+  // Shared wiring: open via [data-<name>-open] anywhere, close via
+  // [data-<name>-close] inside, and a backdrop click. No-ops if the browser
+  // lacks <dialog>.showModal (very old) — the trigger stays inert, page works.
+  const wireModal = (modal, name) => {
+    if (!modal || typeof modal.showModal !== "function") return null;
+    const open = () => modal.showModal();
+    const close = () => modal.close();
+    document.querySelectorAll(`[data-${name}-open]`).forEach((el) =>
       el.addEventListener("click", open)
     );
-    infoModal
-      .querySelectorAll("[data-info-close]")
+    modal
+      .querySelectorAll(`[data-${name}-close]`)
       .forEach((el) => el.addEventListener("click", close));
-    // Click on the backdrop (the <dialog> itself, outside .info-body) closes it.
-    infoModal.addEventListener("click", (e) => {
-      if (e.target === infoModal) close();
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) close(); // click outside .info-body = backdrop
     });
+    return { open, close };
+  };
 
+  // "What's this?" — auto-opens once per device (first ever visit), then only
+  // via the header link. localStorage isn't restricted by the CSP.
+  const info = wireModal(document.getElementById("info-modal"), "info");
+  if (info) {
+    const SEEN_KEY = "evently.infoSeen";
     let seen = null;
     try {
       seen = localStorage.getItem(SEEN_KEY);
@@ -115,8 +120,14 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       /* storage blocked (private mode) — just don't auto-open */
     }
-    if (!seen) open();
+    if (!seen) info.open();
   }
+
+  // Feedback — opened from the footer link; auto-opens on a rejected submit
+  // (blank message) so the guest can retry without hunting for the link again.
+  const feedbackModal = document.getElementById("feedback-modal");
+  const feedback = wireModal(feedbackModal, "feedback");
+  if (feedback && feedbackModal.hasAttribute("data-open-on-load")) feedback.open();
 
   // --- Repeatable form rows (contact channels, household members) -------- //
   // A "remove" flags the row deleted (hidden input → "1") and hides it, but never

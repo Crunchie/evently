@@ -239,6 +239,14 @@ The page behind their unique link is the *entire* guest-side product. No login, 
   queue onto the automated path.
 - **Add to calendar** — download a plain `.ics` file (a `VEVENT` — an event to *add*,
   not a reply mechanism) and/or use a Google Calendar quick-add link.
+- **Report a problem / leave feedback** — a subtle "Something not working? Let Sam know"
+  link under the footer that opens a small modal for a "something's broken" note or
+  suggestion, with an optional reply address. Each submission
+  is a durable `Feedback` row (the source of truth, viewable in the admin, with the page
+  URL + user-agent captured to help reproduce breakage) **and** a best-effort email to
+  the organizer (`FEEDBACK_EMAIL`, defaulting to the reply-to inbox). The email is a
+  bonus notification only: a missing key or provider hiccup is a silent no-op, never a
+  lost report.
 
 **A guest never sees:** other guests' contact details or notes, delivery states, counts
 beyond the opt-in first-name list, or anything about other events. There are no guest

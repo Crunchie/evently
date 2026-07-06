@@ -11,6 +11,7 @@ urlpatterns = [
     path("i/<str:token>/calendar.ics", views.rsvp_ics, name="rsvp-ics"),
     path("i/<str:token>/channel", views.rsvp_channel_request, name="rsvp-channel"),
     path("i/<str:token>/poll/<int:poll_pk>", views.rsvp_poll_vote, name="rsvp-poll"),
+    path("i/<str:token>/feedback", views.rsvp_feedback, name="rsvp-feedback"),
     # Provider webhooks: public but signature-verified (§8/§9).
     path("webhooks/resend", views.resend_webhook, name="resend-webhook"),
     # Organizer side: everything under /admin so one Access rule gates it all.

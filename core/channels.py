@@ -129,6 +129,39 @@ def send_email_batch(messages: list[dict]) -> list[str]:
     return [item["id"] for item in data]
 
 
+def send_feedback_email(feedback) -> bool:
+    """Best-effort: email the organizer a guest's feedback. Returns True if handed to the
+    provider. Never raises — the Feedback row is already the durable record (§2.5); this
+    notification is a bonus, so a missing key or provider hiccup is a silent no-op."""
+    if not (settings.RESEND_API_KEY and settings.FEEDBACK_EMAIL and settings.EMAIL_FROM):
+        return False
+    event = feedback.event
+    context = [f"Event: {event.title}" if event else "Event: (unknown)"]
+    if feedback.reply_email:
+        context.append(f"Reply to guest: {feedback.reply_email}")
+    if feedback.page_path:
+        context.append(f"Page: {feedback.page_path}")
+    if feedback.user_agent:
+        context.append(f"Browser: {feedback.user_agent}")
+    text = feedback.message.strip() + "\n\n—\n" + "\n".join(context)
+    subject = f"Feedback — {event.title}" if event else "Feedback on your invites"
+    try:
+        resend.api_key = settings.RESEND_API_KEY
+        resend.Emails.send(
+            {
+                "from": settings.EMAIL_FROM,
+                "to": [settings.FEEDBACK_EMAIL],
+                # Let a hitting-reply land on the guest when they left an address.
+                "reply_to": feedback.reply_email or settings.EMAIL_REPLY_TO or None,
+                "subject": subject,
+                "text": text,
+            }
+        )
+        return True
+    except Exception:  # provider/network/config error — the record already captured it
+        return False
+
+
 def email_channels(invitation: Invitation) -> list[ContactChannel]:
     """The envelope's email recipients (§2.3): each covered person **routed to
     email**, deduped by address (both parents get the same link). A member whose

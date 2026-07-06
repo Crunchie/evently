@@ -14,6 +14,7 @@ from .models import (
     ContactChannel,
     Delivery,
     Event,
+    Feedback,
     Household,
     Invitation,
     InvitationAttendee,
@@ -224,6 +225,35 @@ class PollVoteAdmin(admin.ModelAdmin):
         "invitation__contact",
         "invitation__household",
     )
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    """Guest "something's broken" reports (§2.5). Records are the source of truth; the
+    organizer also gets an email. Read-only bar the `handled` triage flag."""
+
+    list_display = ("created_at", "event", "short_message", "reply_email", "handled")
+    list_filter = ("handled", "event")
+    list_editable = ("handled",)
+    search_fields = ("message", "reply_email")
+    list_select_related = ("event",)
+    readonly_fields = (
+        "invitation",
+        "event",
+        "message",
+        "reply_email",
+        "page_path",
+        "user_agent",
+        "created_at",
+        "updated_at",
+    )
+
+    @admin.display(description="message")
+    def short_message(self, obj):
+        return obj.message[:80] + ("…" if len(obj.message) > 80 else "")
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(RsvpEvent)

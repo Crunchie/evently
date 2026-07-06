@@ -24,6 +24,7 @@ from .channels import (
     assisted_channels,
     dispatch_email,
     email_channels,
+    send_feedback_email,
     send_targets,
     shared_channel_pairs,
     validate_channel_value,
@@ -36,6 +37,7 @@ from .models import (
     ContactChannel,
     Delivery,
     Event,
+    Feedback,
     Household,
     Invitation,
     InvitationAttendee,
@@ -59,6 +61,7 @@ MAX_NOTE_LEN = 500
 MAX_POLL_OPTIONS = 20  # per poll, organizer + guest-added combined
 MAX_POLL_OPTION_LEN = 100  # matches PollOption.text
 MAX_POLL_QUESTION_LEN = 200  # matches Poll.question
+MAX_FEEDBACK_LEN = 2000  # a bug report, not an essay
 
 
 def _posted_pk(request, field: str) -> int:
@@ -182,6 +185,8 @@ def rsvp_page(request, token):
         "saved": request.GET.get("saved") == "1",
         "channel_requested": request.GET.get("channel_requested") == "1",
         "channel_error": request.GET.get("channel_error") == "1",
+        "feedback_sent": request.GET.get("feedback") == "1",
+        "feedback_error": request.GET.get("feedback") == "error",
         "channel_pending": invitation.channel_requests.filter(
             status=ContactChannel.Status.PROPOSED
         ).exists(),
@@ -382,6 +387,38 @@ def rsvp_channel_request(request, token):
             requested_via=invitation,
         )
     return redirect(f"{invitation.rsvp_path}?channel_requested=1")
+
+
+@require_POST
+def rsvp_feedback(request, token):
+    """Guest reports a problem or shares a thought from the RSVP page (§2.5). Saves a
+    durable Feedback record (the source of truth, viewable in the admin) and fires a
+    best-effort email to the organizer — the record stands even if the email fails. No
+    login: the capability link authenticates, same as the RSVP itself."""
+    invitation = _get_invitation(token)
+    if invitation.state == Invitation.State.REVOKED:
+        return _guest_render(request, "core/rsvp_unavailable.html", status=410)
+
+    message = request.POST.get("message", "").strip()[:MAX_FEEDBACK_LEN]
+    if not message:
+        return redirect(f"{invitation.rsvp_path}?feedback=error")
+
+    reply_email = request.POST.get("reply_email", "").strip()[:254]
+    if reply_email:  # optional — keep only if it's a real address, else drop it silently
+        _, err = validate_channel_value(ContactChannel.Kind.EMAIL, reply_email)
+        if err:
+            reply_email = ""
+
+    feedback = Feedback.objects.create(
+        invitation=invitation,
+        event=invitation.event,
+        message=message,
+        reply_email=reply_email,
+        page_path=request.META.get("HTTP_REFERER", "")[:255],
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:400],
+    )
+    send_feedback_email(feedback)  # best-effort; record already saved
+    return redirect(f"{invitation.rsvp_path}?feedback=1")
 
 
 # --------------------------------------------------------------------------- #
