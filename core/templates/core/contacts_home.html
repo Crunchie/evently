@@ -26,17 +26,17 @@
   <fieldset class="pick">
     <div class="pick-head plain">
       <span class="pn"><a href="{% url 'household-edit' household.pk %}">{{ household.name }}</a></span>
-      <span class="pmeta">{{ members|length }} member{{ members|length|pluralize }}{% if household.primary_contact %} · primary: {{ household.primary_contact.name }}{% endif %}</span>
+      <span class="pmeta">{{ members|length }} member{{ members|length|pluralize }}</span>
       <a class="mini-btn push-right" href="{% url 'contact-new' %}?household={{ household.pk }}">＋ add member</a>
     </div>
     <div class="pick-members">
       {% for c in members %}
-      <div class="pick-row">
-        <span class="cn"><a href="{% url 'contact-edit' c.pk %}">{{ c.name }}</a>{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}{% if c == household.primary_contact %} <span class="badge">primary</span>{% endif %}</span>
+      <a class="pick-row rowlink" href="{% url 'contact-edit' c.pk %}">
+        <span class="cn">{{ c.name }}{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
         {% with ch=c.preferred_channel %}
         <span class="cc">{% if ch %}{{ ch.get_kind_display }}{% if ch.value %}: {{ ch.value }}{% endif %}{% else %}<span class="muted">no channel</span>{% endif %}</span>
         {% endwith %}
-      </div>
+      </a>
       {% empty %}
       <div class="pick-row"><span class="cn muted">No members yet — <a href="{% url 'contact-new' %}?household={{ household.pk }}">add one</a>.</span></div>
       {% endfor %}
@@ -49,12 +49,12 @@
     <div class="pick-head plain"><span class="pn">Individuals</span><span class="pmeta">no household</span></div>
     <div class="pick-members">
       {% for c in loose %}
-      <div class="pick-row">
-        <span class="cn"><a href="{% url 'contact-edit' c.pk %}">{{ c.name }}</a>{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
+      <a class="pick-row rowlink" href="{% url 'contact-edit' c.pk %}">
+        <span class="cn">{{ c.name }}{% if c.nickname %} <span class="muted">“{{ c.nickname }}”</span>{% endif %}</span>
         {% with ch=c.preferred_channel %}
         <span class="cc">{% if ch %}{{ ch.get_kind_display }}{% if ch.value %}: {{ ch.value }}{% endif %}{% else %}<span class="muted">no channel</span>{% endif %}</span>
         {% endwith %}
-      </div>
+      </a>
       {% endfor %}
     </div>
   </fieldset>

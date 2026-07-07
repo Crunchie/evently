@@ -72,9 +72,8 @@ class TagAdmin(admin.ModelAdmin):
 
 @admin.register(Household)
 class HouseholdAdmin(admin.ModelAdmin):
-    list_display = ("name", "primary_contact", "member_count")
+    list_display = ("name", "member_count")
     search_fields = ("name",)
-    list_select_related = ("primary_contact",)
     inlines = [HouseholdMemberInline]
 
     def get_queryset(self, request):

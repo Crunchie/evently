@@ -1097,14 +1097,12 @@ def contacts_home(request):
     hand-built add-contact / add-household flows."""
     q = request.GET.get("q", "").strip()
     households = list(
-        Household.objects.select_related("primary_contact")
-        .prefetch_related(
+        Household.objects.prefetch_related(
             Prefetch(
                 "members",
                 queryset=Contact.objects.prefetch_related("channels").order_by("name"),
             )
-        )
-        .order_by("name")
+        ).order_by("name")
     )
     loose = list(
         Contact.objects.filter(household__isnull=True).prefetch_related("channels").order_by("name")
@@ -1205,18 +1203,13 @@ def _contact_form(request, contact):
 
 def _posted_member_rows(request) -> list[dict]:
     """Parse the new-household form's parallel-array member inputs. A row counts as a
-    member when it has a name and isn't delete-flagged; `primary` names the chosen row's
-    index (matched against the surviving members below)."""
+    member when it has a name and isn't delete-flagged."""
     names = request.POST.getlist("member_name")
     nicks = request.POST.getlist("member_nick")
     births = request.POST.getlist("member_birth")
     kinds = request.POST.getlist("member_ch_kind")
     values = request.POST.getlist("member_ch_value")
     deletes = request.POST.getlist("member_delete")
-    try:
-        primary_idx = int(request.POST.get("primary", "-1"))
-    except (TypeError, ValueError):
-        primary_idx = -1
     rows = []
     for i, raw_name in enumerate(names):
         if (deletes[i] if i < len(deletes) else "0") == "1":
@@ -1231,7 +1224,6 @@ def _posted_member_rows(request) -> list[dict]:
                 "birth": (births[i] if i < len(births) else "").strip(),
                 "kind": (kinds[i] if i < len(kinds) else "").strip(),
                 "value": (values[i] if i < len(values) else "").strip()[:254],
-                "primary": i == primary_idx,
             }
         )
     return rows
@@ -1240,9 +1232,9 @@ def _posted_member_rows(request) -> list[dict]:
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def household_new(request):
-    """Create a household + its members + one contact method each + the primary contact,
-    all in one submit (§2.2) — the thing the Django admin can't do (primary_contact needs
-    the members to already exist)."""
+    """Create a household + its members + one contact method each, all in one submit
+    (§2.2) — the thing the Django admin can't do (the members and their channels in a
+    single form)."""
     if request.method == "POST":
         name = request.POST.get("name", "").strip()[:MAX_NAME_LEN]
         members = _posted_member_rows(request)
@@ -1272,7 +1264,6 @@ def household_new(request):
             )
         with transaction.atomic():
             household = Household.objects.create(name=name, created_by=request.user)
-            primary = None
             for m in members:
                 contact = Contact.objects.create(
                     name=m["name"],
@@ -1291,11 +1282,6 @@ def household_new(request):
                         source=ContactChannel.Source.ORGANIZER,
                         status=ContactChannel.Status.ACTIVE,
                     )
-                if m["primary"] or primary is None:
-                    # Chosen primary wins; otherwise the first member is a sane default.
-                    primary = primary if (primary and not m["primary"]) else contact
-            household.primary_contact = primary
-            household.save(update_fields=["primary_contact", "updated_at"])
         return _contacts_redirect(f"Created household {household.name} ({len(members)} members)")
 
     return render(
@@ -1314,8 +1300,8 @@ def household_new(request):
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def household_edit(request, pk):
-    """Rename a household and (re)assign its primary contact (§2.2). Membership itself is
-    edited via each member's contact page — a contact's `household` field."""
+    """Rename a household (§2.2). Membership itself is edited via each member's contact
+    page — a contact's `household` field."""
     household = get_object_or_404(Household.objects.prefetch_related("members"), pk=pk)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()[:MAX_NAME_LEN]
@@ -1325,14 +1311,8 @@ def household_edit(request, pk):
                 "core/household_edit.html",
                 {"household": household, "error": "A household needs a name."},
             )
-        members = {m.pk: m for m in household.members.all()}
-        try:
-            primary_pk = int(request.POST.get("primary", ""))
-        except (TypeError, ValueError):
-            primary_pk = None
         household.name = name
-        household.primary_contact = members.get(primary_pk)  # None clears it (or invalid pick)
-        household.save(update_fields=["name", "primary_contact", "updated_at"])
+        household.save(update_fields=["name", "updated_at"])
         return _contacts_redirect(f"Updated household {household.name}")
     return render(request, "core/household_edit.html", {"household": household, "error": None})
 

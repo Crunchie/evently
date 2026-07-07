@@ -221,7 +221,7 @@ def test_contact_edit_diffs_channels_and_keeps_proposed(staff_client):
 
 # --- Create a household ----------------------------------------------------- #
 @pytest.mark.django_db
-def test_household_new_creates_members_channels_and_primary(staff_client):
+def test_household_new_creates_members_and_channels(staff_client):
     resp = staff_client.post(
         reverse("household-new"),
         {
@@ -232,7 +232,6 @@ def test_household_new_creates_members_channels_and_primary(staff_client):
             "member_ch_kind": ["whatsapp", "email", "", ""],
             "member_ch_value": ["021 123 4567", "kate@x.com", "", ""],
             "member_delete": ["0", "0", "0", "0"],
-            "primary": "1",  # Kate
         },
     )
     assert resp.status_code == 302
@@ -244,26 +243,6 @@ def test_household_new_creates_members_channels_and_primary(staff_client):
     )  # kid, no channel
     assert members["Dave Henderson"].channels.get().value == "+64211234567"  # E.164
     assert members["Kate Henderson"].channels.get().is_preferred
-    assert hh.primary_contact == members["Kate Henderson"]  # radio honored
-
-
-@pytest.mark.django_db
-def test_household_new_defaults_primary_to_first_member(staff_client):
-    staff_client.post(
-        reverse("household-new"),
-        {
-            "name": "Nomads",
-            "member_name": ["First", "Second"],
-            "member_nick": ["", ""],
-            "member_birth": ["", ""],
-            "member_ch_kind": ["", ""],
-            "member_ch_value": ["", ""],
-            "member_delete": ["0", "0"],
-            # no "primary" posted
-        },
-    )
-    hh = Household.objects.get(name="Nomads")
-    assert hh.primary_contact.name == "First"
 
 
 @pytest.mark.django_db
@@ -288,7 +267,6 @@ def test_household_new_bad_phone_rejected(staff_client):
             "member_ch_kind": ["whatsapp"],
             "member_ch_value": ["nonsense"],
             "member_delete": ["0"],
-            "primary": "0",
         },
     )
     assert resp.status_code == 200
@@ -297,18 +275,14 @@ def test_household_new_bad_phone_rejected(staff_client):
 
 # --- Edit a household ------------------------------------------------------- #
 @pytest.mark.django_db
-def test_household_edit_renames_and_sets_primary(staff_client):
+def test_household_edit_renames(staff_client):
     hh = Household.objects.create(name="Old Name")
-    a = Contact.objects.create(name="A", household=hh)
-    b = Contact.objects.create(name="B", household=hh)
-    hh.primary_contact = a
-    hh.save()
-    resp = staff_client.post(
-        reverse("household-edit", args=[hh.pk]), {"name": "New Name", "primary": str(b.pk)}
-    )
+    Contact.objects.create(name="A", household=hh)
+    Contact.objects.create(name="B", household=hh)
+    resp = staff_client.post(reverse("household-edit", args=[hh.pk]), {"name": "New Name"})
     assert resp.status_code == 302
     hh.refresh_from_db()
-    assert hh.name == "New Name" and hh.primary_contact == b
+    assert hh.name == "New Name"
 
 
 # --- Auth ------------------------------------------------------------------- #

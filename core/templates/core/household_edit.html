@@ -19,21 +19,16 @@
     </div>
 
     <div class="card">
-      <div class="lab">Members &amp; primary contact</div>
-      <p class="sub tight">Pick the primary contact. To add or remove members, edit each
-        person’s household on their <a href="{% url 'contact-new' %}?household={{ household.pk }}">contact page</a>.</p>
+      <div class="lab">Members</div>
+      <p class="sub tight">To add or remove members, edit each person’s household on their
+        <a href="{% url 'contact-new' %}?household={{ household.pk }}">contact page</a>.</p>
       {% for m in household.members.all %}
-      <label class="pick-row selectable">
-        <input type="radio" name="primary" value="{{ m.pk }}" {% if m == household.primary_contact %}checked{% endif %}>
+      <div class="pick-row">
         <span class="cn"><a href="{% url 'contact-edit' m.pk %}">{{ m.name }}</a>{% if m.nickname %} <span class="muted">“{{ m.nickname }}”</span>{% endif %}</span>
-      </label>
+      </div>
       {% empty %}
       <p class="sub">No members yet — <a href="{% url 'contact-new' %}?household={{ household.pk }}">add one</a>.</p>
       {% endfor %}
-      <label class="pick-row selectable">
-        <input type="radio" name="primary" value="" {% if not household.primary_contact %}checked{% endif %}>
-        <span class="cn muted">— no primary —</span>
-      </label>
     </div>
 
     <div class="submit-row">

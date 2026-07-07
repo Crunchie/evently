@@ -53,10 +53,6 @@ class Household(TimestampedModel):
     """A family/group invited as one unit with one link (§2.2)."""
 
     name = models.CharField(max_length=120)  # e.g. "The Hendersons"
-    # The known "main" person of the household (for fallback greetings/attribution).
-    primary_contact = models.ForeignKey(
-        "Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

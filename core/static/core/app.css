@@ -466,6 +466,9 @@ body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
 .pick-head .push-right { margin-left: auto; }
 body.dash .card .sub.tight { margin-top: .1rem; }
 .pick-row.selectable { cursor: pointer; }
+.pick-row.rowlink { color: var(--ink); text-decoration: none; margin: 0 -.9rem; padding: .5rem .9rem; border-radius: 6px; }
+.pick-row.rowlink:hover { background: var(--hover, rgba(0,0,0,.04)); }
+.pick-row.rowlink:hover .cn { color: var(--coral); }
 .pick-head .pn a, .pick-row .cn a { color: var(--ink); }
 .pick-head .pn a:hover, .pick-row .cn a:hover { color: var(--coral); }
 

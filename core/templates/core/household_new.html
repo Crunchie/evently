@@ -6,8 +6,8 @@
 
   <p class="crumbs"><a href="{% url 'contacts-home' %}">← contacts</a></p>
   <h1>New household</h1>
-  <p class="meta">Name the household, add each member with one way to reach them, and pick the primary
-    contact — all in one go. You can add more contact methods to a member later on their page.</p>
+  <p class="meta">Name the household and add each member with one way to reach them — all in one go.
+    You can add more contact methods to a member later on their page.</p>
 
   {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
 
@@ -22,14 +22,13 @@
 
     <div class="card">
       <div class="lab">Members</div>
-      <p class="sub tight">Select the <strong>primary</strong> contact (the household’s main person). Leave a
-        member’s channel as “—” for kids with no contact method.</p>
+      <p class="sub tight">Everyone with a channel gets the invite. Leave a member’s channel as “—”
+        for kids with no contact method.</p>
 
       <div data-rows>
         {% for m in members %}
         <div class="member-row">
           <input type="hidden" name="member_delete" value="0" data-delete>
-          <label class="chan-pref" title="Primary contact"><input type="radio" name="primary" value="{{ forloop.counter0 }}" {% if m.primary %}checked{% endif %}></label>
           <div class="member-fields">
             <div class="form-grid">
               <input type="text" name="member_name" value="{{ m.name }}" placeholder="Name">
@@ -51,7 +50,6 @@
         <template data-row-template>
           <div class="member-row">
             <input type="hidden" name="member_delete" value="0" data-delete>
-            <label class="chan-pref" title="Primary contact"><input type="radio" name="primary" value=""></label>
             <div class="member-fields">
               <div class="form-grid">
                 <input type="text" name="member_name" value="" placeholder="Name">

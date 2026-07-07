@@ -831,8 +831,8 @@ needs an eventual decision: build it, or trim it from the spec.
    A dedicated hand-built **Contacts section** now exists at `/admin/contacts/`
    (`contacts_home` + `contact_new`/`contact_edit` + `household_new`/`household_edit` in
    `views.py`): add a contact with several channels, or create a whole household + its
-   members + one contact method each + the primary contact in a **single submit** — the
-   thing the Django admin can't do (`primary_contact` needs the members to exist first).
+   members + one contact method each in a **single submit** — the thing the Django admin
+   can't do (all the members and their channels in one form).
    So adding people no longer needs the admin. The remaining gap is *inline* quick-add on
    the event Add-guests picker itself (create-and-invite without leaving the page).
 5. **Add a whole tag at once** (§2.2) — the event-side Add-guests picker has name
