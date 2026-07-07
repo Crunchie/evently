@@ -6,6 +6,7 @@ from core import views
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("healthz", views.healthz, name="healthz"),
+    path(".well-known/security.txt", views.security_txt, name="security-txt"),
     # Guest side: capability URLs, public (§8).
     path("i/<str:token>", views.rsvp_page, name="rsvp"),
     path("i/<str:token>/calendar.ics", views.rsvp_ics, name="rsvp-ics"),

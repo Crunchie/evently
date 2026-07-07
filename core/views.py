@@ -78,6 +78,16 @@ def healthz(request):
     return JsonResponse({"status": "ok"})
 
 
+def security_txt(request):
+    """security.txt (RFC 9116) at /.well-known/security.txt — where researchers
+    look to report a vulnerability. Expires is a required field; we compute it a
+    year out on each request so the file never lapses without a redeploy."""
+    contact = "security@samandmonevents.party"
+    expires = (timezone.now() + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body = f"Contact: mailto:{contact}\nExpires: {expires}\n"
+    return HttpResponse(body, content_type="text/plain; charset=utf-8")
+
+
 def landing(request):
     """The bare apex "/". The app has no public front door — guests arrive on their
     own capability link (/i/<token>) and organizers on /admin. So this is a deliberate
