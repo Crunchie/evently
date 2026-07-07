@@ -123,7 +123,9 @@ def test_event_invite_page_lists_only_uninvited_contacts(staff_client, event):
     assert f'value="{invited.pk}"'.encode() not in resp.content  # Alice already invited
 
 
-def test_event_invite_creates_invitations_and_redirects_to_dashboard(staff_client, event):
+def test_event_invite_creates_invitations_and_redirects_to_dashboard(
+    staff_client, event, fake_send
+):
     a = contact_with_email("Alice", "a@x.com")
     b = contact_with_email("Bob", "b@x.com")
 
@@ -132,6 +134,37 @@ def test_event_invite_creates_invitations_and_redirects_to_dashboard(staff_clien
     assert reverse("event-dashboard", args=[event.pk]) in resp.url
     assert Invitation.objects.filter(event=event).count() == 2
     assert InvitationAttendee.objects.filter(invitation__event=event).count() == 2
+    # Adding is inviting: the email invites went out immediately.
+    assert len(fake_send[0]) == 2  # one batch, both emails
+    assert all(i.state == State.SENT for i in Invitation.objects.filter(event=event))
+    assert "2+emailed" in resp.url
+
+
+def test_event_invite_auto_sends_and_activates_draft(staff_client, fake_send):
+    """Adding an email guest to a draft event sends the invite and flips it active (§2.1/§2.3)."""
+    draft = Event.objects.create(
+        title="Draft Do", starts_at=timezone.now() + timedelta(days=3), status=Event.Status.DRAFT
+    )
+    alice = contact_with_email("Alice", "a@x.com")
+
+    staff_client.post(reverse("event-invite", args=[draft.pk]), {"contacts": [alice.pk]})
+    draft.refresh_from_db()
+    assert draft.status == Event.Status.ACTIVE  # first send flips draft → active
+    assert Invitation.objects.get(event=draft, contact=alice).state == State.SENT
+    assert len(fake_send[0]) == 1
+
+
+def test_event_invite_assisted_guest_not_emailed_but_queued(staff_client, event, fake_send):
+    """A WhatsApp-only guest can't be emailed — no send, stays PENDING for the queue."""
+    wa = Contact.objects.create(name="Wanda")
+    ContactChannel.objects.create(
+        contact=wa, kind=Kind.WHATSAPP, value="+64211111111", is_preferred=True
+    )
+
+    resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [wa.pk]})
+    assert not fake_send  # nothing emailed
+    assert Invitation.objects.get(event=event, contact=wa).state == State.PENDING
+    assert "share+via+the+send+queue" in resp.url
 
 
 def test_event_invite_skips_already_invited(staff_client, event):

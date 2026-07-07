@@ -368,9 +368,12 @@ body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
   background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
   padding: .8rem .9rem; margin: 1rem 0; color: #3a3a3d;
 }
-.q-actions { display: flex; gap: .6rem; margin-bottom: .3rem; }
-.q-actions .btn { cursor: pointer; font: inherit; font-weight: 700; }
-.q-primary { border-color: var(--coral); color: var(--coral); }
+.q-hint { color: var(--coral); font-size: .8rem; font-weight: 600; margin-top: .3rem; }
+.q-actions { display: flex; align-items: center; gap: .6rem; margin: 1rem 0 .3rem; }
+.q-actions .save, .q-actions .btn { width: auto; margin: 0; cursor: pointer; font: inherit; font-weight: 700; }
+.q-actions .save { flex: 1 1 auto; text-align: center; }
+.q-confirm { color: var(--muted); font-size: .82rem; margin: .5rem 0 0; }
+.q-confirm .linkish { font-size: inherit; }
 .q-skip { text-align: center; margin-top: .8rem; }
 .linkish {
   background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
@@ -378,8 +381,9 @@ body.dash .card .save:disabled { background: #d1d5db; cursor: not-allowed; }
 }
 
 /* ---------- dashboard extras (Phase 6) ---------- */
-.banner.reminder { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap; }
+.banner.reminder, .banner.assisted-todo { display: flex; gap: .9rem; align-items: center; flex-wrap: wrap; }
 .banner.reminder .save { width: auto; margin: 0; padding: .5rem 1rem; font-size: .88rem; }
+.banner.assisted-todo .qlink { margin-left: auto; }
 .approvals .approval {
   display: flex; justify-content: space-between; align-items: center; gap: 1rem;
   padding: .55rem 0; border-top: 1px solid var(--line);

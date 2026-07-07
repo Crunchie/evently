@@ -87,7 +87,8 @@
       <button class="save" {% if event.status == "cancelled" %}disabled{% endif %}>Cancel event + notify</button>
     </form>
     {% if targets.notified_assisted %}
-    <p class="sub">Then walk the <a href="{% url 'event-queue' event.pk %}?kind=cancellation">assisted queue ({{ targets.notified_assisted|length }})</a> so Messenger/WhatsApp guests hear too.</p>
+    <p class="sub">You'll be taken straight to the send queue afterwards to tell the
+      {{ targets.notified_assisted|length }} Messenger / WhatsApp guest{{ targets.notified_assisted|length|pluralize }} too.</p>
     {% endif %}
   </section>
 

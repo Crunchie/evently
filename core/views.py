@@ -478,6 +478,25 @@ def event_dashboard(request, pk):
         inv.route_assisted = bool(assisted_channels(inv))
         inv.has_bounce = inv.id in bounced_inv_ids
 
+    # Outstanding assisted *invite* shares (§6): the standing to-do the send queue
+    # exists for. Surfaced as a dashboard prompt so "when do I do this?" answers itself
+    # instead of hiding in the send screen's small print. Matches send_targets'
+    # pending_assisted (PENDING/QUEUED/SHARED envelopes with an un-shared assisted copy).
+    shared_pairs = shared_channel_pairs(event)
+    _pending_states = (
+        Invitation.State.PENDING,
+        Invitation.State.QUEUED,
+        Invitation.State.SENT,  # mixed household: emailed one member, assisted copy still owed
+        Invitation.State.SHARED,
+    )
+    assisted_pending = sum(
+        1
+        for inv in invitations
+        if inv.state in _pending_states
+        for ch in assisted_channels(inv)
+        if (inv.pk, ch.pk) not in shared_pairs
+    )
+
     # Revoked envelopes stay visible in the table (greyed) but are out of every
     # count — uninvited guests aren't catered for (§2.2).
     attendee_qs = InvitationAttendee.objects.filter(invitation__event=event).exclude(
@@ -518,6 +537,7 @@ def event_dashboard(request, pk):
             "attendee__contact", "actor_user"
         )[:30],
         "reminder_due": reminder_due,
+        "assisted_pending": assisted_pending,
         "polls": _poll_display(event, None, voting_open=False),
         "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped", "msg")}
         if request.GET.get("did")
@@ -530,7 +550,9 @@ def event_dashboard(request, pk):
 @require_http_methods(["GET", "POST"])
 def event_send(request, pk):
     """Send review screen (§2.3) + the notify actions (§2.4). Sends are synchronous
-    (§9): the redirect back to the dashboard carries per-guest ✓/✗ counts."""
+    (§9): the redirect carries per-guest ✓/✗ counts. When the same audience also has
+    assisted (WhatsApp/Messenger) recipients, we hand straight off to their send queue
+    rather than stranding them behind a link the organizer has to rediscover."""
     event = get_object_or_404(Event, pk=pk)
     targets = send_targets(event)
 
@@ -557,6 +579,19 @@ def event_send(request, pk):
             result = dispatch_email(targets["reminder_email"], "reminder", base_url)
         else:
             return HttpResponseForbidden("Unknown action")
+
+        # Hand off to the assisted queue when this audience has WhatsApp/Messenger
+        # recipients still to reach (§6). Cancellation especially: the assisted folks
+        # must hear too, so we route into their queue instead of leaving a footnote.
+        queue = SEND_ACTION_QUEUE.get(action)
+        if queue and targets[queue[1]]:
+            kind, _ = queue
+            _reset_skips(request, event.pk, kind)  # a fresh send starts a clean walk
+            q = reverse("event-queue", args=[event.pk])
+            return redirect(
+                f"{q}?kind={kind}&from_send=1&sent={result['sent']}&failed={result['failed']}"
+            )
+
         dash = reverse("event-dashboard", args=[event.pk])
         return redirect(
             f"{dash}?did={action}&sent={result['sent']}"
@@ -572,12 +607,13 @@ def event_invite(request, pk):
     """Add guests to this event (§2.2): the event-side counterpart to the Contacts
     admin action. Lists contacts not yet on this event, plus households you can invite
     as a single shared-link envelope; ticking either creates the invitation (attendees
-    + token via Invitation.save). Sending stays the separate reviewed step on the send
-    screen, where we land afterwards."""
+    + token via Invitation.save). Email invitees are sent their invite **immediately**
+    (§2.3) — adding *is* inviting; assisted (WhatsApp/Messenger) guests still need the
+    send queue, which the dashboard prompt points to."""
     event = get_object_or_404(Event, pk=pk)
 
     if request.method == "POST":
-        created = 0
+        new_invites = []
 
         # Whole-household envelopes: one shared link covering every member (§2.5).
         # Members of a chosen household are covered by that link, so an individual
@@ -595,8 +631,7 @@ def event_invite(request, pk):
         covered_member_ids = {m.pk for hh in selected_hh for m in hh.members.all()}
         for household in selected_hh:
             if household.pk not in already_hh:
-                Invitation.objects.create(event=event, household=household)
-                created += 1
+                new_invites.append(Invitation.objects.create(event=event, household=household))
 
         selected = Contact.objects.filter(pk__in=request.POST.getlist("contacts")).exclude(
             pk__in=covered_member_ids
@@ -608,11 +643,34 @@ def event_invite(request, pk):
         )
         for contact in selected:
             if contact.pk not in already:  # skip anyone already invited (defensive)
-                Invitation.objects.create(event=event, contact=contact)
-                created += 1
+                new_invites.append(Invitation.objects.create(event=event, contact=contact))
 
+        # Send the email invites now, so "add guests" actually invites them (§2.3). Only
+        # the just-added ones, and never for a cancelled event. dispatch_email skips
+        # anyone without an email route — assisted-only guests stay PENDING for the queue.
+        result = {"sent": 0, "failed": 0, "skipped": 0}
+        if new_invites and event.status != Event.Status.CANCELLED:
+            result = dispatch_email(
+                new_invites, "invite", request.build_absolute_uri("/").rstrip("/")
+            )
+            if result["sent"] and event.status == Event.Status.DRAFT:
+                event.status = Event.Status.ACTIVE  # first send flips draft → active (§2.1)
+                event.save(update_fields=["status", "updated_at"])
+
+        created = len(new_invites)
+        assisted = sum(1 for i in new_invites if assisted_channels(i))
+        if not created:
+            msg = "no new guests"
+        else:
+            parts = [f"{created} guest{'' if created == 1 else 's'} added"]
+            if result["sent"]:
+                parts.append(f"{result['sent']} emailed")
+            if result["failed"]:
+                parts.append(f"{result['failed']} failed")
+            if assisted:
+                parts.append(f"{assisted} to share via the send queue")
+            msg = " · ".join(parts)
         dash = reverse("event-dashboard", args=[event.pk])
-        msg = f"{created} guest{'' if created == 1 else 's'} added" if created else "no new guests"
         return redirect(f"{dash}?{urlencode({'did': 'invited', 'msg': msg})}")
 
     q = request.GET.get("q", "").strip()
@@ -663,6 +721,48 @@ QUEUE_TARGET_KEY = {
     "cancellation": "notified_assisted",
     "reminder": "reminder_assisted",
 }
+# Which send action hands off to which queue kind + the assisted-target list that
+# decides whether the hand-off is worth making. "retry" has no assisted queue.
+SEND_ACTION_QUEUE = {
+    "invites": ("invite", "pending_assisted"),
+    "nudge": ("nudge", "non_responders_assisted"),
+    "update": ("update", "notified_assisted"),
+    "cancel": ("cancellation", "notified_assisted"),
+    "reminder": ("reminder", "reminder_assisted"),
+}
+
+
+def _skip_session_key(event_pk: int, kind: str) -> str:
+    return f"qskip:{event_pk}:{kind}"
+
+
+def _get_skips(request, event_pk: int, kind: str) -> set[tuple[int, int]]:
+    """(invitation_id, channel_id) pairs the organizer parked with "skip for now" —
+    remembered in the session so the walk is resumable and skipped cards sink out of
+    the way instead of reappearing first on every revisit (§6)."""
+    out = set()
+    for tag in request.session.get(_skip_session_key(event_pk, kind), []):
+        try:
+            inv, ch = tag.split(":")
+            out.add((int(inv), int(ch)))
+        except (ValueError, AttributeError):
+            continue
+    return out
+
+
+def _add_skip(request, event_pk: int, kind: str, inv_pk: int, ch_pk: int) -> None:
+    key = _skip_session_key(event_pk, kind)
+    parked = request.session.get(key, [])
+    tag = f"{inv_pk}:{ch_pk}"
+    if tag not in parked:
+        parked.append(tag)
+        request.session[key] = parked
+        request.session.modified = True
+
+
+def _reset_skips(request, event_pk: int, kind: str) -> None:
+    if request.session.pop(_skip_session_key(event_pk, kind), None) is not None:
+        request.session.modified = True
 
 
 def _queue_items(event: Event, kind: str) -> list[tuple[Invitation, ContactChannel]]:
@@ -681,6 +781,11 @@ def _queue_items(event: Event, kind: str) -> list[tuple[Invitation, ContactChann
     return items
 
 
+def _active_queue(all_items, skips):
+    """Cards still awaiting action: everything outstanding minus what's parked."""
+    return [it for it in all_items if (it[0].pk, it[1].pk) not in skips]
+
+
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def event_queue(request, pk):
@@ -693,6 +798,11 @@ def event_queue(request, pk):
         n = max(0, int(params.get("n", 0)))
     except ValueError:
         n = 0
+
+    # "Review skipped" un-parks everyone so they re-enter the walk (GET, idempotent).
+    if request.method == "GET" and request.GET.get("review_skipped") == "1":
+        _reset_skips(request, event.pk, kind)
+        return redirect(f"{reverse('event-queue', args=[event.pk])}?kind={kind}")
 
     if request.method == "POST":
         action = request.POST.get("action", "")
@@ -721,28 +831,39 @@ def event_queue(request, pk):
                 sent_at=timezone.now(),
             )
             invitation.advance_state(Invitation.State.SHARED)
-            # Invite-kind items leave the queue once shared (state moved past
-            # PENDING) — the list shifts under n. Other kinds stay put: step over.
-            items = _queue_items(event, kind)
-            if n < len(items) and (items[n][0].pk, items[n][1].pk) == (invitation.pk, channel.pk):
+            # Invite-kind items leave the queue once shared (state moved past PENDING) —
+            # the list shifts under n. Notify kinds re-share, so the card stays put:
+            # step over it. (Skips are excluded so indices line up with the view.)
+            active = _active_queue(_queue_items(event, kind), _get_skips(request, event.pk, kind))
+            if n < len(active) and (active[n][0].pk, active[n][1].pk) == (
+                invitation.pk,
+                channel.pk,
+            ):
                 n += 1
         elif action == "skip":
-            n += 1
+            # Park it: it drops out of the active list, so the next card shifts into n.
+            _add_skip(request, event.pk, kind, invitation.pk, channel.pk)
         else:
             return HttpResponseForbidden("Unknown action")
         return redirect(f"{reverse('event-queue', args=[event.pk])}?kind={kind}&n={n}")
 
-    items = _queue_items(event, kind)
+    skips = _get_skips(request, event.pk, kind)
+    all_items = _queue_items(event, kind)
+    active = _active_queue(all_items, skips)
+    skipped_count = len(all_items) - len(active)
     base_url = request.build_absolute_uri("/").rstrip("/")
     item = None
-    if n < len(items):
-        invitation, channel = items[n]
+    if n < len(active):
+        invitation, channel = active[n]
         url = base_url + invitation.rsvp_path
         payload = share_payload(kind, invitation, url)
         item = {
             "invitation": invitation,
             "channel": channel,
             "payload": payload,
+            # How many assisted copies this one household envelope carries — so the card
+            # can flag "same link as another member" and the two-taps isn't a surprise.
+            "household_assisted": len(assisted_channels(invitation)),
             "wa_url": (
                 wa_link(channel.value, payload["text"])
                 if channel.kind == ContactChannel.Kind.WHATSAPP
@@ -750,7 +871,19 @@ def event_queue(request, pk):
             ),
             "last_contacted": invitation.deliveries.aggregate(t=Max("sent_at"))["t"],
         }
-    context = {"event": event, "kind": kind, "n": n, "total": len(items), "item": item}
+    context = {
+        "event": event,
+        "kind": kind,
+        "n": n,
+        "total": len(active),
+        "done_count": min(n, len(active)),
+        "skipped_count": skipped_count,
+        "item": item,
+        # Hand-off banner after a send action (§2.4): how the email half went.
+        "from_send": params.get("from_send") == "1",
+        "sent": params.get("sent"),
+        "failed": params.get("failed"),
+    }
     return render(request, "core/queue.html", context)
 
 

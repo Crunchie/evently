@@ -320,10 +320,13 @@ def send_targets(event: Event) -> dict:
     ]
     return {
         "pending_with_email": [i for i in pending if email_channels(i)],
-        # Invite-queue targets: not-yet-sent envelopes, plus SHARED ones with an
-        # assisted copy still to go (the two-WhatsApp-parents household).
+        # Invite-queue targets: envelopes with an assisted copy still to go. Includes
+        # SENT — a mixed-route household emailed to one member still owes its WhatsApp/
+        # Messenger members their share (the envelope advances to SENT on the email, but
+        # the assisted copies aren't done). SHARED stays too (two-WhatsApp-parents: one
+        # copy shared, one to go). unshared_assisted() drops anyone fully covered.
         "pending_assisted": [
-            i for i in by_state(S.PENDING, S.QUEUED, S.SHARED) if unshared_assisted(i)
+            i for i in by_state(S.PENDING, S.QUEUED, S.SENT, S.SHARED) if unshared_assisted(i)
         ],
         "pending_no_channel": [
             i for i in pending if not email_channels(i) and not assisted_channels(i)

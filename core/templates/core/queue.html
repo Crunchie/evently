@@ -7,7 +7,15 @@
   <p class="crumbs"><a href="{% url 'event-send' event.pk %}">← send &amp; notify</a></p>
   <h1>Send queue <span class="badge">{{ kind }}</span></h1>
   <p class="meta">{{ event.title }} ·
-    {% if total %}{{ n|add:1 }} of {{ total }}{% else %}nothing to share{% endif %}</p>
+    {% if item %}{{ n|add:1 }} of {{ total }} to share{% else %}nothing to share{% endif %}
+    {% if skipped_count %}· {{ skipped_count }} skipped{% endif %}</p>
+
+  {% if from_send %}
+  <div class="banner ok">
+    ✅ {{ sent }} sent by email{% if failed and failed != "0" %} · <span class="warn">{{ failed }} failed</span>{% endif %}.
+    Now share the {{ total }} that can't be emailed — one tap each.
+  </div>
+  {% endif %}
 
   {% if item %}
   <section class="card rsvp queue-card">
@@ -17,6 +25,9 @@
         <div class="q-via">via <strong>{{ item.channel.get_kind_display }}</strong>
           {% if item.channel.value %}· {{ item.channel.value }}{% endif %}
           {% if item.channel.contact_id != item.invitation.contact_id %}· for {{ item.channel.contact.greeting_name }}{% endif %}</div>
+        {% if item.household_assisted > 1 %}
+        <div class="q-hint">One of {{ item.household_assisted }} in this household — each gets the same link.</div>
+        {% endif %}
         {% if item.last_contacted %}<div class="q-last">last contacted {{ item.last_contacted|timesince }} ago</div>{% endif %}
       </div>
       <span class="badge st-{{ item.invitation.state }}">{{ item.invitation.get_state_display }}</span>
@@ -24,7 +35,8 @@
 
     <pre class="q-preview">{{ item.payload.text }}</pre>
 
-    {# Marking shared is optimistic (§6): the guest's link click is the real signal. #}
+    {% comment %}The channel button below is the real action; tapping it optimistically
+    marks this copy shared and moves on (§6) — the guest's link click is the true signal.{% endcomment %}
     <form method="post" id="shared-form">
       {% csrf_token %}
       <input type="hidden" name="kind" value="{{ kind }}">
@@ -35,17 +47,18 @@
 
       <div class="q-actions">
         {% if item.wa_url %}
-        <a class="btn q-primary" id="wa-btn" href="{{ item.wa_url }}" target="_blank" rel="noopener">
+        <a class="save" id="wa-btn" href="{{ item.wa_url }}" target="_blank" rel="noopener">
           Open WhatsApp ↗</a>
         {% else %}
-        <button class="btn q-primary" type="button" id="share-btn"
+        <button class="save" type="button" id="share-btn"
                 data-text="{{ item.payload.share_text }}" data-url="{{ item.payload.url }}">
           Share… (Messenger)</button>
         {% endif %}
         <button class="btn" type="button" id="copy-btn" data-text="{{ item.payload.text }}">
           Copy invite</button>
       </div>
-      <button class="save" type="submit">Mark shared &amp; next →</button>
+      <p class="q-confirm">Opening the app marks this one done and jumps to the next.
+        Sent it another way? <button class="linkish" type="submit">Mark shared &amp; next →</button></p>
     </form>
     <form method="post" class="q-skip">
       {% csrf_token %}
@@ -57,10 +70,19 @@
     </form>
   </section>
 
+  {% elif skipped_count %}
+  <section class="card center">
+    <h1>⏸️</h1>
+    <p><strong>{{ skipped_count }} skipped.</strong> Everything else has been shared.</p>
+    <p><a class="save" href="{% url 'event-queue' event.pk %}?kind={{ kind }}&amp;review_skipped=1">
+      Review the {{ skipped_count }} skipped →</a></p>
+    <p class="sub"><a href="{% url 'event-dashboard' event.pk %}">Back to the dashboard →</a></p>
+  </section>
+
   {% else %}
   <section class="card center">
     <h1>🎉</h1>
-    <p><strong>Queue done.</strong>{% if total %} Everything left was skipped — revisit any time.{% else %} No one is waiting on an assisted share.{% endif %}</p>
+    <p><strong>Queue done.</strong> No one is waiting on an assisted share.</p>
     <p class="sub"><a href="{% url 'event-dashboard' event.pk %}">Back to the dashboard →</a></p>
   </section>
   {% endif %}

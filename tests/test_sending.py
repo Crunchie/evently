@@ -95,6 +95,68 @@ def test_send_invites_flow(staff_client, event, fake_send, settings):
     assert inv.deliveries.count() == 1
 
 
+def _whatsapp_contact(name, phone):
+    contact = Contact.objects.create(name=name)
+    ContactChannel.objects.create(
+        contact=contact, kind=ContactChannel.Kind.WHATSAPP, value=phone, is_preferred=True
+    )
+    return contact
+
+
+def test_send_invites_hands_off_to_assisted_queue(staff_client, event, fake_send):
+    """B: after the email half goes, land straight in the assisted queue for the rest
+    rather than back on the dashboard where the queue is a link to rediscover."""
+    Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    Invitation.objects.create(event=event, contact=_whatsapp_contact("Dan", "+64211234567"))
+
+    resp = staff_client.post(send_url(event), {"action": "invites"})
+    loc = resp["Location"]
+    assert "/queue/" in loc and "kind=invite" in loc and "from_send=1" in loc and "sent=1" in loc
+
+    page = staff_client.get(loc).content.decode()
+    assert "sent by email" in page and "Dan" in page  # hand-off banner + assisted card
+
+
+def test_cancel_hands_off_to_assisted_queue(staff_client, event, fake_send):
+    """C: cancellation must reach assisted guests too — route into their queue instead
+    of leaving it as an easily-missed footnote."""
+    event.status = Event.Status.ACTIVE
+    event.save()
+    inv = Invitation.objects.create(event=event, contact=_whatsapp_contact("Dan", "+64211234567"))
+    inv.state = State.SHARED  # already reached once → counts as "notified"
+    inv.save()
+
+    resp = staff_client.post(send_url(event), {"action": "cancel"})
+    event.refresh_from_db()
+    assert event.status == Event.Status.CANCELLED
+    loc = resp["Location"]
+    assert "/queue/" in loc and "kind=cancellation" in loc
+    assert "Dan" in staff_client.get(loc).content.decode()
+
+
+def test_mixed_household_keeps_assisted_share_after_email(staff_client, event, fake_send):
+    """Regression: emailing a mixed-route household advances the envelope to SENT, but
+    its WhatsApp member still owes a share — it must stay in the invite queue, not vanish."""
+    hh = Household.objects.create(name="Mixed")
+    jane = contact_with_email("Jane", "jane@x.com")
+    jane.household = hh
+    jane.save()
+    mark = _whatsapp_contact("Mark", "+64222222222")
+    mark.household = hh
+    mark.save()
+    inv = Invitation.objects.create(event=event, household=hh)
+
+    loc = staff_client.post(send_url(event), {"action": "invites"})["Location"]
+    inv.refresh_from_db()
+    assert inv.state == State.SENT  # emailed Jane
+    assert "kind=invite" in loc  # ...but handed off to the queue for Mark
+    assert "wa.me/64222222222" in staff_client.get(loc).content.decode()
+
+    # And the dashboard keeps nagging until Mark's share is done.
+    dash = staff_client.get(reverse("event-dashboard", args=[event.pk])).content.decode()
+    assert "still need" in dash
+
+
 def test_invite_message_carries_event_details(event):
     from core.messaging import build_message
 

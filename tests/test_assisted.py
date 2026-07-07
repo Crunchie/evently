@@ -139,24 +139,73 @@ def test_queue_walk_share_and_done(staff_client, event):
     assert "Queue done" in page
 
 
-def test_queue_skip_moves_on_without_delivery(staff_client, event):
+def test_queue_skip_parks_and_is_reviewable(staff_client, event):
     dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
     inv = Invitation.objects.create(event=event, contact=dave)
 
-    resp = staff_client.post(
+    staff_client.post(
         reverse("event-queue", args=[event.pk]),
         {
             "action": "skip",
             "kind": "invite",
-            "n": 0,
             "invitation": inv.pk,
             "channel": dave.channels.get().pk,
         },
     )
-    assert "n=1" in resp["Location"]
     inv.refresh_from_db()
-    assert inv.state == State.PENDING and not inv.deliveries.exists()
-    assert "Queue done" in staff_client.get(queue_url(event, kind="invite", n=1)).content.decode()
+    assert inv.state == State.PENDING and not inv.deliveries.exists()  # skip sends nothing
+
+    # Parked, not gone: the walk shows the skipped tally + a way back, not the plain done screen.
+    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
+    assert "1 skipped" in page and "Review" in page and "Dave" not in page
+
+    # "Review skipped" un-parks everyone so they re-enter the walk.
+    staff_client.get(queue_url(event, kind="invite", review_skipped="1"))
+    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
+    assert "Dave" in page and "1 of 1" in page
+
+
+def test_queue_skip_persists_across_visits(staff_client, event):
+    """Two WhatsApp guests: skipping the first parks it so the second is served, and a
+    fresh page load doesn't resurface the skipped one first (§6)."""
+    a = make_contact("Alice", (Kind.WHATSAPP, "+64211111111", True))
+    b = make_contact("Bob", (Kind.WHATSAPP, "+64222222222", True))
+    inv_a = Invitation.objects.create(event=event, contact=a)
+    Invitation.objects.create(event=event, contact=b)
+
+    staff_client.post(
+        reverse("event-queue", args=[event.pk]),
+        {
+            "action": "skip",
+            "kind": "invite",
+            "invitation": inv_a.pk,
+            "channel": a.channels.get().pk,
+        },
+    )
+    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
+    assert "Bob" in page and "Alice" not in page and "1 skipped" in page
+
+
+def test_dashboard_prompts_for_outstanding_assisted_shares(staff_client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    dash_url = reverse("event-dashboard", args=[event.pk])
+
+    dash = staff_client.get(dash_url).content.decode()
+    assert "still need" in dash and "Open send queue" in dash  # the prompt is visible
+
+    # Share it → the standing to-do clears.
+    staff_client.post(
+        reverse("event-queue", args=[event.pk]),
+        {
+            "action": "shared",
+            "kind": "invite",
+            "invitation": inv.pk,
+            "channel": dave.channels.get().pk,
+        },
+    )
+    dash = staff_client.get(dash_url).content.decode()
+    assert "still need" not in dash
 
 
 def test_household_two_whatsapp_parents_two_taps_same_link(staff_client, event):

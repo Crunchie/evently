@@ -37,6 +37,14 @@
   </div>
   {% endif %}
 
+  {% if assisted_pending %}
+  <div class="banner muted assisted-todo">
+    💬 <strong>{{ assisted_pending }} guest{{ assisted_pending|pluralize }} still need{{ assisted_pending|pluralize:"s," }} a WhatsApp / Messenger share.</strong>
+    Email invites send themselves; these you tap out one at a time.
+    <a class="qlink" href="{% url 'event-queue' event.pk %}?kind=invite">Open send queue →</a>
+  </div>
+  {% endif %}
+
   {% if reminder_due %}
   <div class="banner muted reminder">
     ⏰ <strong>{{ event.title }} is nearly here.</strong> Send a day-before reminder to everyone Going / Maybe?

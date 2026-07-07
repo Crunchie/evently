@@ -1,8 +1,8 @@
 {% extends "core/base.html" %}
 {% load static %}
-{# Organizer pages are the installable PWA (§7): manifest + icon + the service
-   worker (registered by app.js via the data-sw attribute; served at /admin/sw.js
-   so its scope covers the organizer side). Guest pages stay plain. #}
+{% comment %}Organizer pages are the installable PWA (§7): manifest + icon + the service
+worker (registered by app.js via the data-sw attribute; served at /admin/sw.js
+so its scope covers the organizer side). Guest pages stay plain.{% endcomment %}
 {% block head %}
 <link rel="manifest" href="{% static 'core/manifest.webmanifest' %}">
 <meta name="theme-color" content="#f15c3d">

@@ -170,10 +170,14 @@ on one copy only applies while nothing has been opened, and a later open clears 
 - *sent* = provider accepted the email; *shared* = share sheet / deep link invoked
   (assisted channels — optimistic, §6); *opened* = first click of the unique link
   (**the real delivery signal** for every channel); *responded* = RSVP recorded.
-- **Send flow:** a review screen summarizes the plan ("12 by email, 15 by Messenger,
-  3 with no channel — fix?"). Confirm → emails go out as a batch; assisted-channel
-  invitees enter the **send queue** (share → next → share, §6). Guests with no usable
-  channel are flagged, not silently skipped.
+- **Send flow — adding is inviting:** ticking guests on the Add-guests picker (where each
+  person's channel is shown) *is* the review. On submit, **email invitees are sent their
+  invite immediately** and assisted-channel invitees enter the **send queue** (share →
+  next → share, §6); the dashboard prompt points to who's still owed a share, and guests
+  with no usable channel are flagged, not silently skipped. Adding the first guest to a
+  draft flips it active (§2.1). The **Send & notify** screen keeps the batch/re-send
+  controls for nudges, updates, reminders, cancellation, and retrying failures — and as a
+  fallback "send invites" for anyone added while the email provider was down.
 - **Household invitations are one envelope:** inviting a household creates a *single*
   invitation with a *single* link covering all members. Delivery can go to more than one
   member's channel (e.g. both parents get the same link), and whoever opens it RSVPs for
@@ -489,6 +493,26 @@ page like any other channel (§4). The only new state is per-invitation **delive
 tracking**, which is *optimistic*: mark "shared" when the share sheet / deep link is
 invoked (no delivery/read receipt comes back) and let the organizer correct it. The
 true signal that it worked is the invitee clicking their link.
+
+**Making the queue discoverable & unmissable (the "when/how" polish).** The assisted
+queue is easy to forget because email is fire-and-forget while assisted is a manual
+walk. So:
+- The **dashboard shows a standing prompt** — "💬 N guests still need a WhatsApp /
+  Messenger share → Open send queue" — whenever un-shared assisted *invites* exist. This
+  is the answer to "when do I do this?"; it clears as each share goes out.
+- **Send hands off to the queue.** After the email half of any action (invite / nudge /
+  update / reminder / **cancellation**) dispatches, if that same audience has assisted
+  recipients we redirect straight into their queue with a "✅ N sent by email — now share
+  the rest" banner, instead of dropping back on the dashboard. Cancellation especially:
+  assisted guests must hear too, so it's part of the flow, not a footnote.
+- **Skips persist and park.** "Skip for now" is remembered in the session, so skipped
+  cards drop out of the walk (they don't resurface first on every revisit); the done
+  screen tallies them and offers "Review the N skipped" to un-park.
+- **Mixed households stay in the queue.** Emailing one member advances the envelope to
+  SENT, but its WhatsApp/Messenger members still owe a share — `pending_assisted`
+  includes SENT so those copies aren't silently lost (they leave only once actually
+  shared). The queue card also flags "one of N in this household — same link" so the
+  repeat tap isn't a surprise.
 
 Telegram (and the WhatsApp Business API, if ever) remain Phase 2 options for fully
 *automated* chat sends (§10).
