@@ -39,16 +39,16 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
   display: flex; justify-content: space-between; align-items: center;
   max-width: 1080px; margin: 0 auto 3rem;
 }
-.brand { font-weight: 800; font-size: 1.1rem; opacity: .95; }
+.brand { font-weight: 800; font-size: 1.4rem; opacity: .95; }
 .whats-this {
-  margin-right: auto; margin-left: .8rem; padding: .3rem .7rem; border-radius: 999px;
+  margin-right: auto; margin-left: .8rem; padding: .4rem .85rem; border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .12);
-  backdrop-filter: blur(8px); color: #fff; font: inherit; font-size: .8rem; font-weight: 600;
+  backdrop-filter: blur(8px); color: #fff; font: inherit; font-size: 1rem; font-weight: 600;
   cursor: pointer;
 }
 .whats-this:hover { background: rgba(255, 255, 255, .24); }
 .greet {
-  font-size: .85rem; font-weight: 600; padding: .4rem .8rem; border-radius: 999px;
+  font-size: 1rem; font-weight: 600; padding: .5rem .9rem; border-radius: 999px;
   background: rgba(255, 255, 255, .2); backdrop-filter: blur(8px);
 }
 .chips { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
@@ -170,6 +170,28 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 .coming-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .8rem; }
 .coming-head h3 { font-size: .95rem; font-weight: 800; }
 .coming-head .cnt { font-size: .82rem; color: var(--muted); }
+/* Overlapping avatar bubbles + "See all →" — the full list lives in a modal. */
+.who-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.bubbles { display: flex; align-items: center; }
+.bubbles .bubble {
+  width: 2.15rem; height: 2.15rem; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: .82rem; flex: none;
+  border: 2px solid #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); background: var(--coral);
+}
+.bubbles .bubble + .bubble { margin-left: -.55rem; }
+.bubbles .bubble:nth-child(4n+2) { background: #6d5bd0; }
+.bubbles .bubble:nth-child(4n+3) { background: #12a594; }
+.bubbles .bubble:nth-child(4n)   { background: #e0912f; }
+.bubbles .bubble.more { background: #e5e7eb; color: var(--muted); font-size: .72rem; font-weight: 800; }
+.see-all {
+  flex: none; border: 1px solid var(--line); background: #fff; color: var(--ink);
+  border-radius: 999px; padding: .42rem .85rem; font-size: .82rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.see-all:hover { background: #f8f8f9; }
+
+/* Full guest list (rendered inside the "See all" modal). */
+.guest-list-modal { max-height: 50vh; overflow-y: auto; margin-bottom: 1rem; }
 .guest { display: flex; align-items: center; gap: .7rem; padding: .35rem 0; }
 .guest .av { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center;
   color: #fff; font-weight: 700; font-size: .82rem; flex: none; background: var(--coral); }

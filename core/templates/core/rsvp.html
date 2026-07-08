@@ -173,10 +173,16 @@
         <h3>Who's coming</h3>
         <span class="cnt">{{ going_count }} going{% if maybe_count %} · {{ maybe_count }} maybe{% endif %}</span>
       </div>
-      <div class="guest-list">
-        {% for g in coming %}
-        <div class="guest"><span class="av">{{ g.name|first|upper }}</span><span class="gn">{{ g.name }}</span><span class="gs s-{{ g.status }}">{{ g.status|capfirst }}</span></div>
-        {% endfor %}
+      <div class="who-row">
+        {% with total=coming|length %}
+        <div class="bubbles">
+          {% for g in coming|slice:":6" %}
+          <span class="bubble">{{ g.name|first|upper }}</span>
+          {% endfor %}
+          {% if total > 6 %}<span class="bubble more">+{{ total|add:"-6" }}</span>{% endif %}
+        </div>
+        {% endwith %}
+        <button type="button" class="see-all" data-guests-open>See all →</button>
       </div>
       {% endif %}
 
@@ -267,4 +273,23 @@ link is inert but the page still works.
     </form>
   </div>
 </dialog>
+
+{% comment %}
+Full guest list, opened from the "See all →" button beside the avatar bubbles.
+app.js drives it; without JS the button is inert but the bubbles still show.
+{% endcomment %}
+{% if coming %}
+<dialog id="guests-modal" class="info-modal">
+  <div class="info-body">
+    <h2>Who's coming</h2>
+    <p class="fine">{{ going_count }} going{% if maybe_count %} · {{ maybe_count }} maybe{% endif %}</p>
+    <div class="guest-list guest-list-modal">
+      {% for g in coming %}
+      <div class="guest"><span class="av">{{ g.name|first|upper }}</span><span class="gn">{{ g.name }}</span><span class="gs s-{{ g.status }}">{{ g.status|capfirst }}</span></div>
+      {% endfor %}
+    </div>
+    <button type="button" class="save" data-guests-close>Close</button>
+  </div>
+</dialog>
+{% endif %}
 {% endblock %}

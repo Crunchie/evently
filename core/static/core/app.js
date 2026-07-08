@@ -131,6 +131,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const feedback = wireModal(feedbackModal, "feedback");
   if (feedback && feedbackModal.hasAttribute("data-open-on-load")) feedback.open();
 
+  // Full guest list — opened from the "See all →" button beside the bubbles.
+  wireModal(document.getElementById("guests-modal"), "guests");
+
   // --- Repeatable form rows (contact channels, household members) -------- //
   // A "remove" flags the row deleted (hidden input → "1") and hides it, but never
   // pulls it from the DOM — so the parallel-array field indices, and the
