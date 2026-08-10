@@ -8,4 +8,4 @@ so its scope covers the organizer side). Guest pages stay plain.{% endcomment %}
 <meta name="theme-color" content="#f15c3d">
 <link rel="apple-touch-icon" href="{% static 'core/icon-180.png' %}">
 {% endblock %}
-{% block bodyattrs %} data-sw="{% url 'service-worker' %}"{% endblock %}
+{% block bodyattrs %} data-sw="{% url 'service-worker' %}" data-build="{{ build_id }}" data-version-url="{% url 'version' %}"{% endblock %}

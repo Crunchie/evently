@@ -108,6 +108,15 @@ def service_worker(request):
     return response
 
 
+def version(request):
+    """Build stamp for the organizer PWA's auto-refresh (§7). app.js checks this against the
+    stamp the open page loaded with; when a new image is deployed the value changes and the
+    PWA reloads itself. Tiny and never cached so the check always sees the live value."""
+    response = JsonResponse({"build": settings.BUILD_ID})
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 # --------------------------------------------------------------------------- #
 #  Guest side — the RSVP page (§2.5). Capability URL, no login, ever.
 # --------------------------------------------------------------------------- #

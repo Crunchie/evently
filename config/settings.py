@@ -16,6 +16,14 @@ if not DEBUG and SECRET_KEY == "dev-insecure-change-me":
 
     raise ImproperlyConfigured("SECRET_KEY must be set when DEBUG=0")
 
+# Build stamp baked into the image (Dockerfile); the organizer PWA polls it and reloads
+# itself when it changes after a deploy (§7). Read once at startup so all gunicorn workers
+# report the same value. Absent in local dev (no BUILD_ID file) → "dev", which never changes.
+try:
+    BUILD_ID = (BASE_DIR / "BUILD_ID").read_text().strip() or "dev"
+except OSError:
+    BUILD_ID = "dev"
+
 # localhost/127.0.0.1 are always allowed: the Docker healthcheck probes
 # http://localhost:8000/healthz and must not 400 in production.
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()] + [
@@ -82,6 +90,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "core.context_processors.build_id",
             ],
         },
     },

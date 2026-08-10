@@ -15,6 +15,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 # App code.
 COPY . .
 
+# Build stamp for the PWA auto-refresh (§7). This RUN shares the cache fate of the
+# COPY above: if any source file changed the COPY layer busts and this re-runs with a
+# fresh timestamp; if nothing changed it's cached and the stamp stays put — exactly the
+# "changed on a real deploy, stable otherwise" semantics the client version-check wants.
+RUN date -u +%Y%m%d%H%M%S > /srv/BUILD_ID
+
 # Collect static (admin + whitenoise). A throwaway key is fine — no DB touched.
 RUN SECRET_KEY=build DEBUG=0 uv run --no-dev python manage.py collectstatic --noinput
 

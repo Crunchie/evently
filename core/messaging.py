@@ -20,7 +20,6 @@ def _when(event) -> str:
 def _subject_and_text(kind: str, invitation: Invitation, url: str) -> tuple[str, str]:
     event = invitation.event
     greeting = invitation.greeting
-    host = event.host_display or "your hosts"
     when = _when(event)
     where = event.location_text or "location to be confirmed"
 
@@ -31,9 +30,9 @@ def _subject_and_text(kind: str, invitation: Invitation, url: str) -> tuple[str,
             details += f"{event.description.strip()}\n\n"
         text = (
             f"Hi {greeting} 👋\n\n"
-            f"{host} would love to see you at {event.title}.\n\n"
+            f"We would love to see you at our upcoming event: {event.title}.\n\n"
             f"{details}"
-            f"See the details and let them know if you can make it:\n{url}"
+            f"See the details and let us know if you can make it:\n{url}"
         )
     elif kind == "nudge":
         subject = f"Still hoping you can make it — {event.title}"

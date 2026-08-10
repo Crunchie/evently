@@ -551,6 +551,14 @@ reminders), so cost is a non-issue — the goal is just reliable delivery from y
   it unlocks **no** extra sharing capability (`navigator.share` behaves identically in a
   plain tab). A native app would only be justified by deeper OS integration this product
   doesn't need.
+- **Auto-refresh on deploy.** The installed PWA can stay open on one screen for a long
+  time and rarely gets a hard reload, so it can drift behind a deploy. Each org page is
+  stamped with the image's **build id** (baked into the Docker image; a fresh timestamp
+  whenever source changes, stable otherwise, and identical across all gunicorn workers).
+  `app.js` re-checks the live build id — via a tiny no-store `GET /admin/version` — when
+  the tab regains focus and on a 5-minute poll; if it differs, the page reloads itself to
+  pick up the new version. The reload is suppressed while a form field is focused or a
+  form has unsaved edits, so it never clobbers work in progress.
 
 ## 8. Auth & security
 

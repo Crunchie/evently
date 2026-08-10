@@ -18,6 +18,7 @@ urlpatterns = [
     # Organizer side: everything under /admin so one Access rule gates it all.
     # Custom views must be declared before the admin catch-all.
     path("admin/sw.js", views.service_worker, name="service-worker"),
+    path("admin/version", views.version, name="version"),
     # Organizer home — friendly landing behind Access (§2.6).
     path("admin/home/", views.admin_home, name="admin-home"),
     # Contacts & households — hand-built flow (§2.2); admin stays as CRUD backup.

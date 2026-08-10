@@ -178,4 +178,39 @@ document.addEventListener("DOMContentLoaded", () => {
   if (swUrl && "serviceWorker" in navigator) {
     navigator.serviceWorker.register(swUrl).catch(() => {});
   }
+
+  // --- PWA: auto-refresh when a new version is deployed (§7) -------------- //
+  // A long-lived organizer tab (especially the installed PWA, which rarely gets a hard
+  // reload) can go stale after a deploy. Each org page is stamped with the image's build
+  // id; we periodically re-check the live build id and, when it differs, reload to pick up
+  // the new version. Guarded so we never reload out from under someone mid-edit.
+  const loadedBuild = document.body.dataset.build;
+  const versionUrl = document.body.dataset.versionUrl;
+  if (loadedBuild && versionUrl) {
+    const isEditing = () => {
+      const el = document.activeElement;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+      // A form the user has started filling in — don't clobber unsaved work.
+      return Array.from(document.forms).some((f) =>
+        Array.from(f.elements).some(
+          (e) => e.type !== "hidden" && e.value && e.value !== e.defaultValue
+        )
+      );
+    };
+    const check = async () => {
+      if (document.visibilityState !== "visible" || isEditing()) return;
+      try {
+        const res = await fetch(versionUrl, { cache: "no-store" });
+        if (!res.ok) return;
+        const { build } = await res.json();
+        if (build && build !== loadedBuild) location.reload();
+      } catch {
+        /* offline / transient — try again next tick */
+      }
+    };
+    // Check when the user returns to the tab (the common case for the installed PWA)…
+    document.addEventListener("visibilitychange", check);
+    // …and on a slow poll to catch tabs left open in the foreground.
+    setInterval(check, 5 * 60 * 1000);
+  }
 });
