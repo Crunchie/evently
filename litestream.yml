@@ -4,7 +4,7 @@
 #   1. `file` — always on. Same volume, so it is NOT disaster recovery; it exists so
 #      the replication + restore mechanics are always exercised and drillable.
 #   2. `s3` (Cloudflare R2) — the real off-box backup. Uncomment once the bucket +
-#      token exist (CLOUDFLARE_SETUP.md §9): R2 is S3-compatible; the free tier
+#      token exist (§9): R2 is S3-compatible; the free tier
 #      (10 GB) dwarfs this database forever. The bucket MUST be private (§8 item 5).
 #
 # Restore (either replica; drilled 2026-07-04 against `file`):

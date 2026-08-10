@@ -1,4 +1,4 @@
-"""Django settings for evently. See the Design Summary §9 and IMPLEMENTATION_PLAN.md."""
+"""Django settings for evently. See the Design Summary §9."""
 
 import os
 from pathlib import Path
@@ -44,7 +44,7 @@ FEEDBACK_EMAIL = os.environ.get("FEEDBACK_EMAIL", "") or EMAIL_REPLY_TO
 # (§6) — "021 555 0123" needs to know it's a NZ number.
 PHONE_REGION = os.environ.get("PHONE_REGION", "NZ")
 
-# Cloudflare Access — organizer auth at the edge (§8, CLOUDFLARE_SETUP.md §3).
+# Cloudflare Access — organizer auth at the edge (§8).
 # Both unset in local dev → the middleware is inert and normal Django login applies.
 CF_ACCESS_TEAM_DOMAIN = os.environ.get("CF_ACCESS_TEAM_DOMAIN", "")  # team.cloudflareaccess.com
 CF_ACCESS_AUD = os.environ.get("CF_ACCESS_AUD", "")  # Access application AUD tag

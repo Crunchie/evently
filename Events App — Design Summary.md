@@ -16,7 +16,6 @@ instead of scattered across DMs, texts, and "did you see my message?"
 > (organizer dashboard, older Pico styling — historical; the built dashboard has its own
 > styling in `static/core/app.css`).
 >
-> **Build plan:** `IMPLEMENTATION_PLAN.md` (phased, with gates; uv tooling).
 > **Data model:** implemented in `core/models.py`.
 
 ---
@@ -745,8 +744,8 @@ Docker Compose stack** on Proxmox — `app` (gunicorn + WhiteNoise), `cloudflare
 `litestream` (SQLite backup). The app exposes no host ports; the tunnel is the only
 ingress. One repo, one `docker compose up`.
 
-*Step-by-step build order, concrete tooling files, and per-phase gates live in
-`IMPLEMENTATION_PLAN.md`.*
+*Step-by-step build order, concrete tooling files, and per-phase gates lived in a
+separate build plan, kept privately now that the phases are built.*
 
 *Alternatives considered:* FastAPI/Flask + Jinja2 — lighter but hand-rolls admin,
 forms, CSRF, migrations for no gain at this scale (FastAPI's strength is APIs; this is
@@ -792,8 +791,8 @@ as the fallback if running it at home ever stops being fun.
   Koyeb, Render (DB expiry + cold-wake), Supabase (idle pause).
 
 ### Custom domain — required either way
-**Decided: `samandmonevents.party`** (registered 2026-07-04; see CLOUDFLARE_SETUP.md §8
-for the full record). Needed regardless of path: **Resend requires DKIM on your own
+**Decided: `samandmonevents.party`** (registered 2026-07-04; the full record of what was
+configured at the edge is kept in the private ops docs). Needed regardless of path: **Resend requires DKIM on your own
 domain** (managed hosting
 only provides a `*.workers.dev` subdomain for the app itself), and RSVP links need a
 stable, trustworthy hostname.
@@ -853,7 +852,7 @@ WhatsApp Business API, at per-message rates — if pursued.
       the schema but not yet rendered anywhere). Per-event toggles can flip any time.
 
 **Phase 1 build details — all built, tested, and deployed** (Phases 0–7; details and
-per-phase gates in `IMPLEMENTATION_PLAN.md`):
+per-phase gates in the private build plan):
 - [x] Django models + migrations with indexes + constraints (`core/models.py`, §5).
 - [x] Dispatcher supporting automated (email) + assisted channels (`core/channels.py`).
 - [x] Token scheme: 256-bit `secrets.token_urlsafe`, regenerate/revoke (§8).
@@ -870,7 +869,7 @@ per-phase gates in `IMPLEMENTATION_PLAN.md`):
 - [x] PWA: manifest + service worker, organizer side only (§7).
 - [x] Security pass: strict CSP, autoescaping audit, `Referrer-Policy`, CSRF, token
       log-redaction, HSTS; edge WAF rate-limit rule is a Cloudflare-dashboard item
-      (status tracked in `IMPLEMENTATION_PLAN.md` "What's left").
+      (status tracked in the private build plan's "What's left").
 - [x] Cloudflare Tunnel-only ingress; no published ports (§8/§9).
 - [x] Access→Django auto-login middleware (`core/auth.py`, §8).
 

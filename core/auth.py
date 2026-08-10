@@ -1,4 +1,4 @@
-"""Cloudflare Access → Django auth bridge (§8; CLOUDFLARE_SETUP.md §3).
+"""Cloudflare Access → Django auth bridge (§8).
 
 Access authenticates organizers at the edge and forwards a signed JWT with every
 request (`Cf-Access-Jwt-Assertion`). This middleware validates it against the team's

@@ -48,7 +48,7 @@ services:
     user: "${PUID:-1001}:${PGID:-1001}"
     environment:
       # R2 credentials for the off-box replica (litestream.yml expands these once
-      # the s3 block is uncommented — CLOUDFLARE_SETUP.md §9). Empty until then.
+      # the s3 block is uncommented — §9). Empty until then.
       - LITESTREAM_ENDPOINT=${LITESTREAM_ENDPOINT:-}
       - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID:-}
       - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY:-}

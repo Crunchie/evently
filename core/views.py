@@ -462,7 +462,7 @@ def rsvp_feedback(request, token):
 
 # --------------------------------------------------------------------------- #
 #  Organizer side — basic per-event dashboard (§2.6). Lives under /admin so the
-#  single Cloudflare Access path rule covers it (CLOUDFLARE_SETUP.md).
+#  single Cloudflare Access path rule covers it (§8).
 # --------------------------------------------------------------------------- #
 REMINDER_WINDOW_HOURS = 48  # how close the event must be before the prompt appears
 
