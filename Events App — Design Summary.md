@@ -43,11 +43,12 @@ your data, it costs ~$0 to run, and people don't need an account to RSVP.
 1. Create an event — title, time, location, description.
 2. Build the guest list from your contacts (a contact can have several ways to be
    reached: Messenger, WhatsApp, email).
-3. Hit send. The app picks the right channel per person and delivers a personal invite —
-   a link to their own RSVP page — over that channel.
+3. Queue the invites. The app picks the right channel per person and writes each message
+   into the outbox — a link to their own RSVP page. Read them, then send: one button
+   posts the email ones, and the WhatsApp/Messenger ones you tap out and tick off.
 4. Watch the dashboard fill in — Going / Maybe / Can't, per person.
-5. Send a reminder to the people who haven't responded (or to the "Going" crowd the day
-   before). Edit event details and everyone gets the update.
+5. Queue a reminder for the people who haven't responded (or for the "Going" crowd the
+   day before). Edit event details and queue an update when it's worth telling people.
 
 *As an invitee:*
 1. Receive an invite on a channel you already use — no app to install, no account to make.
@@ -61,7 +62,8 @@ your data, it costs ~$0 to run, and people don't need an account to RSVP.
 - Create / edit / cancel events; edits propagate to everyone already invited.
 - Contact list with multiple channels per person; reusable across events.
 - Invite whole **households/families** with one link — every member still counted (§2.2).
-- One-click send; automatic per-person channel selection via the dispatcher.
+- Queue-then-send outbox: automatic per-person channel selection, every message readable
+  before it goes, and one place showing what has and hasn't gone out (§2.3).
 - RSVP dashboard (counts + per-guest status + response history; refresh-based).
 - Reminders and nudges to non-responders.
 
@@ -112,14 +114,18 @@ upload/storage/resizing complexity for polish that can come later.
 
 - **Draft** — build the guest list, preview the RSVP page exactly as a guest will see
   it, nothing sent yet, everything editable. Events start here.
-- **Send** — the first send flips draft → active.
+- **Send** — queueing the first guest's invite flips draft → active (it has to happen
+  here, not on send: the RSVP page only accepts answers on an active event).
 - **Edit while active** — organizer chooses per edit: **"notify guests"** (material
   changes: time, place, cancellation-adjacent stuff) queues an update notification over
-  each guest's channel; **silent** (typo fixes) doesn't. Either way the RSVP page always
+  each guest's channel; **silent** (typo fixes) doesn't. In the built app this is a
+  separate deliberate action rather than a per-edit prompt (§13 item 3). Either way the
+  RSVP page always
   shows current truth — the link is *living, not a snapshot* — so even unnotified guests
   are never looking at stale details.
-- **Cancel** — confirmation step, then a cancellation notice to everyone invited; the
-  RSVP page flips to a "cancelled" state and stops accepting RSVPs.
+- **Cancel** — confirmation step; drops anything still queued, then queues a cancellation
+  notice to everyone invited. The RSVP page flips to a "cancelled" state and stops
+  accepting RSVPs.
 - **Clone** — copy any event (details + guest list; RSVPs and tokens reset) as a new
   draft. This is the pragmatic answer to recurring gatherings without recurring-event
   machinery.
@@ -167,17 +173,35 @@ responding can't regress the envelope to merely "opened", and with several deliv
 on one copy only applies while nothing has been opened, and a later open clears it.
 `revoked` (§2.2) always applies and is terminal.
 
-- *sent* = provider accepted the email; *shared* = share sheet / deep link invoked
-  (assisted channels — optimistic, §6); *opened* = first click of the unique link
-  (**the real delivery signal** for every channel); *responded* = RSVP recorded.
-- **Send flow — adding is inviting:** ticking guests on the Add-guests picker (where each
-  person's channel is shown) *is* the review. On submit, **email invitees are sent their
-  invite immediately** and assisted-channel invitees enter the **send queue** (share →
-  next → share, §6); the dashboard prompt points to who's still owed a share, and guests
-  with no usable channel are flagged, not silently skipped. Adding the first guest to a
-  draft flips it active (§2.1). The **Send & notify** screen keeps the batch/re-send
-  controls for nudges, updates, reminders, cancellation, and retrying failures — and as a
-  fallback "send invites" for anyone added while the email provider was down.
+- *queued* = a message for this envelope is waiting in the outbox; *sent* = provider
+  accepted the email; *shared* = an assisted message the organizer confirmed they sent
+  (§6); *opened* = first click of the unique link (**the real delivery signal** for every
+  channel); *responded* = RSVP recorded.
+- **Send flow — queue first, then send (revised 2026-08-10; supersedes "adding is
+  inviting").** Nothing is ever sent as a side effect of another action. Every action that
+  needs to reach guests — adding them, nudging, updating, reminding, cancelling — writes
+  **pending rows into the outbox and stops**. Adding guests flips a draft active (§2.1)
+  and lands you on **Messages**, where the messages wait.
+  - **Email** leaves on one button: *Send all N pending emails*, across every message
+    kind at once. Holding one back is cancelling that row first ("Don't send") — there
+    are no tick-boxes, so the button always means "send what the list shows".
+  - **Assisted** messages leave when a human shares them **and says so**. Opening a share
+    sheet is not evidence anything was sent, so only an explicit *Mark sent* moves a row.
+  - **Guests with no usable channel get a row too** (status `blocked`), not a silent skip
+    — the outbox is meant to be the complete list. It can be marked done by hand ("told
+    them at the school gate") or unblocked by adding a channel.
+  - **Why:** with sends scattered across three screens and assisted shares recorded
+    optimistically, there was no single answer to "what has actually gone out?". One
+    queue, one place, one button.
+- **The Messages screen (§2.6) is the outbox**: pending email with each message readable
+  in full before it goes, the manual checklist, the can't-send list, failures needing a
+  retry, and the complete sent history. The **Queue messages** screen (formerly Send &
+  notify) holds the batch actions that feed it.
+- **Messages can be rewritten per row** before they go. The RSVP link must stay — it's the
+  only reason the message exists — and an edit that drops it is refused. An **unedited**
+  row re-renders from current event data at send time, so fixing the venue after queueing
+  reaches anyone whose message hasn't left yet; an edited row goes out in your words,
+  untouched.
 - **Household invitations are one envelope:** inviting a household creates a *single*
   invitation with a *single* link covering all members. Delivery can go to more than one
   member's channel (e.g. both parents get the same link), and whoever opens it RSVPs for
@@ -192,21 +216,34 @@ on one copy only applies while nothing has been opened, and a later open clears 
   member, so "the parents are in, the kids aren't" is one action. Recorded in history as
   an **organizer-made** change (§5), and the guest can still override it later via their
   link (last-write-wins) — the manual value is a real answer, not a lock.
-- **Email bounces** surface on the dashboard with a "try another channel" prompt.
+- **Email bounces** surface on the dashboard with a "try another channel" prompt, and on
+  Messages under *Needs attention* with a retry that re-queues rather than re-sends — so
+  a bad address can be fixed in between.
+- **Cancelling an event drops everything still queued** before queueing the cancellation
+  notice. An invite arriving after a cancellation is the worst thing this system could
+  do. Uninviting one guest does the same for their envelope.
 
 ### 2.4 Reminders & updates
 
-All notifications reuse each guest's invite channel (email = automated send; assisted
-channels = the affected guests re-enter the send queue).
+All notifications reuse each guest's invite channel and all of them **queue rather than
+send** (§2.3): email messages join the pending-email batch, assisted ones join the manual
+list.
 
 - **Nudge non-responders** — one tap; templated message; shows exactly who will receive
   it before confirming.
 - **Day-before reminder** to Going/Maybe guests — offered as a prompt per event; manual
   confirm in v1 (a scheduled auto-send toggle is possible later — it would introduce the
   first clock-driven job, via a worker loop, §9).
-- **Change notifications** on material edits and **cancellation notices** (§2.1).
-- **Anti-spam guard:** per-guest last-contacted timestamps are shown, and duplicate
-  nudges won't stack in the queue.
+- **Change notifications** on material edits and **cancellation notices** (§2.1). Neither
+  is automatic: editing a live event queues nothing on your behalf. One rule holds
+  everywhere — *a message exists because you asked for it* — and it avoids the "fixed a
+  typo in the address, thirty update messages appeared" trap. The staleness case it might
+  have covered is handled the other way: unedited pending messages re-render at send time
+  (§2.3), so a late fix reaches anyone whose message hasn't gone yet, with no second
+  message queued.
+- **Anti-spam guard:** per-guest last-contacted timestamps are shown, and queueing is
+  idempotent — a channel that already holds a pending message of that kind is skipped, so
+  pressing "queue nudge" twice queues one nudge.
 
 ### 2.5 What a guest sees and does (RSVP page)
 
@@ -285,7 +322,7 @@ capability — a forwarded link can RSVP as that person (§8).
   links back to it and `admin.site.site_url` points there, so it's reachable from the
   habitual `/admin` without remembering a URL. **Contacts, households, and their channels
   have a hand-built flow** (§2.2 — add-contact / create-household under `/admin/contacts/`),
-  alongside the **dashboard** and the **send queue** as the polished organizer views. The
+  alongside the **dashboard** and the **Messages outbox** as the polished organizer views. The
   **Django admin** stays registered as CRUD backup for event fields, tags, and raw
   invitation/delivery rows (§9).
 
@@ -421,10 +458,17 @@ one-stepper RSVP UX and simplifies headcount. **(c)** guest channel-change reque
   **auto-created** from the envelope's target (idempotent `sync_attendees`, re-run when
   household membership changes) and never auto-removed — history survives someone
   leaving a household.
-- **deliveries** — each actual send over a channel (for retries / multi-channel — a
-  household envelope may deliver to several member channels). An **audit record**, not a
-  queue (§9 — sends are synchronous): records the actual address/number used and the
-  outcome.
+- **deliveries** — **the outbox** (revised 2026-08-10; was an audit record). One row per
+  (envelope, channel, message) that needs to go out, written `pending` **before** anything
+  is sent — a household envelope spawns several, one per member channel, all carrying the
+  same link. Each row holds `message_kind` (what it says) separately from `channel_kind`
+  (how it travels), the address snapshot, and the **message itself** (`subject` / `body`,
+  plus `is_edited`) so it can be read and rewritten before sending. Statuses are an outbox
+  lifecycle: `pending → sent`, with `failed` / `bounced` (retryable), `blocked` (nobody to
+  send to) and `cancelled` (decided against). `deferred_at` is the walkthrough's "skip for
+  now" — on the row, not in the session, so the walk is resumable and two devices agree.
+  There is deliberately **no `shared` status**: `channel_kind` already records that a send
+  was manual, and for a manual channel `sent` means the organizer confirmed it.
 - **rsvp_events** — append-only history of responses (attendee, status, note, timestamp,
   and `actor` = guest / organizer, §2.3); current status + latest note are denormalized
   onto `invitation_attendees` / `invitations`.
@@ -475,8 +519,8 @@ all of it.
   friend; the invite blurb + that invitee's unique RSVP link arrive pre-filled in the
   Messenger compose box. One tap to send — and fully ToS-safe, since *the human* sends
   through the real app.
-- A **send queue** UI walks through the assisted invitees one at a time (share → next →
-  share → next), so a guest list of ~30 is a couple minutes of tapping, not a chore.
+- A **walkthrough** steps through the pending manual messages one at a time (share →
+  mark sent → next), so a guest list of ~30 is a couple minutes of tapping, not a chore.
 - **Desktop fallback:** a "Copy invite" button copies the pre-filled blurb + link to the
   clipboard to paste into messenger.com. (Simpler and more reliable than the Send Dialog.)
 
@@ -489,30 +533,31 @@ channels. The *automated* WhatsApp Business API stays out of scope (§10 Phase 2
 
 **Why this needs almost no backend:** every invite is just a unique tracking link, so
 assisted channels require **zero inbound integration** — RSVPs return through the RSVP
-page like any other channel (§4). The only new state is per-invitation **delivery
-tracking**, which is *optimistic*: mark "shared" when the share sheet / deep link is
-invoked (no delivery/read receipt comes back) and let the organizer correct it. The
-true signal that it worked is the invitee clicking their link.
+page like any other channel (§4). The only new state is the outbox row, and the true
+signal that a message worked is the invitee clicking their link.
 
-**Making the queue discoverable & unmissable (the "when/how" polish).** The assisted
-queue is easy to forget because email is fire-and-forget while assisted is a manual
-walk. So:
-- The **dashboard shows a standing prompt** — "💬 N guests still need a WhatsApp /
-  Messenger share → Open send queue" — whenever un-shared assisted *invites* exist. This
-  is the answer to "when do I do this?"; it clears as each share goes out.
-- **Send hands off to the queue.** After the email half of any action (invite / nudge /
-  update / reminder / **cancellation**) dispatches, if that same audience has assisted
-  recipients we redirect straight into their queue with a "✅ N sent by email — now share
-  the rest" banner, instead of dropping back on the dashboard. Cancellation especially:
-  assisted guests must hear too, so it's part of the flow, not a footnote.
-- **Skips persist and park.** "Skip for now" is remembered in the session, so skipped
-  cards drop out of the walk (they don't resurface first on every revisit); the done
-  screen tallies them and offers "Review the N skipped" to un-park.
-- **Mixed households stay in the queue.** Emailing one member advances the envelope to
-  SENT, but its WhatsApp/Messenger members still owe a share — `pending_assisted`
-  includes SENT so those copies aren't silently lost (they leave only once actually
-  shared). The queue card also flags "one of N in this household — same link" so the
-  repeat tap isn't a surprise.
+**Marking done is manual, deliberately (revised 2026-08-10).** Sharing used to mark a
+copy `shared` optimistically the moment the share sheet or deep link was invoked. It no
+longer marks anything: **opening a share sheet is not evidence a message was sent** — the
+sheet gets dismissed, the wrong friend gets picked, the tab gets closed — and an
+optimistic mark is indistinguishable from a real one afterwards, which is precisely what
+made "what has actually gone out?" unanswerable. The organizer presses *Mark sent*.
+
+**Making the queue discoverable & unmissable (the "when/how" polish).** Manual sends are
+easy to forget. So:
+- The **dashboard shows a standing prompt** — "📮 N messages waiting to send" — covering
+  the whole outbox, not just assisted shares. Now that nothing sends itself, this prompt
+  is load-bearing rather than decoration: it's what stops a queued invite being forgotten.
+- **Two views of the same rows.** The Messages list has every pending manual message with
+  share / copy / mark-sent inline; *Work through them* opens the one-card-at-a-time walk
+  for a focused run on a phone. The card is a **view of the outbox, not parallel state**,
+  so the list and the walk can never disagree.
+- **Skips persist on the row.** "Skip for now" sets `deferred_at`, sinking the card to the
+  bottom of the walk. It used to live in the session, so the walk reset in a new browser
+  and two devices disagreed.
+- **Mixed households.** A household envelope gets one row per member channel, so emailing
+  one member never silently absorbs the share another member is still owed. The card flags
+  "one of N in this household — same link" so the repeat tap isn't a surprise.
 
 Telegram (and the WhatsApp Business API, if ever) remain Phase 2 options for fully
 *automated* chat sends (§10).
@@ -659,7 +704,7 @@ Flask/FastAPI, because this app's shape plays to Django's batteries:
 
 - **Django admin ≈ free organizer backoffice.** Contacts, events, invitations,
   deliveries all get a generated CRUD UI — v1 needs hand-built pages only where they
-  matter (RSVP page, dashboard, send queue — §2.6).
+  matter (RSVP page, dashboard, Messages outbox — §2.6).
 - **Security defaults match §8:** CSRF middleware, template auto-escaping (XSS), ORM
   parameterization, sessions — on by default rather than wired up by hand.
 - **ORM + migrations built in, SQLite first-class** (enable WAL mode).
@@ -668,7 +713,7 @@ Flask/FastAPI, because this app's shape plays to Django's batteries:
 **Frontend: server-rendered Django templates + one hand-written CSS file + one small
 vanilla JS file.** Server-rendered HTML is the right tool. HTMX was in the original plan
 for the dynamic bits, but plain forms + POST/redirect/GET ended up covering everything
-(send-queue share→next included), so it was never added (§13 item 7) — no JS framework,
+(the manual walkthrough included), so it was never added (§13 item 7) — no JS framework,
 no npm, no build step; the only script is `static/core/app.js` (data-attribute driven,
 CSP-strict). The dashboard updates on refresh, not live-push. PWA = a manifest + small
 service worker on top, stack-independent.
@@ -678,17 +723,21 @@ service worker on top, stack-independent.
   change the stack: still one static CSS file, no build tooling. Pico (or nothing) can
   still back the plainer organizer/admin screens where looks matter less.
 
-**Background work: none in v1 — sends are synchronous (revised; cron dropped).** Every
-notification in v1 is human-initiated (§2.4: invites on Send, nudges one-tap, the
-day-before reminder is a confirmed prompt), so nothing runs on a clock and there is no
-queue to drain. Hitting Send calls the provider *in the request* — Resend's batch
-endpoint covers ~30 invites in one sub-second HTTP call — and the review screen
-immediately shows per-guest ✓/✗. The `deliveries` table (§5) is therefore an **audit
-record** (what went out, when, to which address, result), not a queue; failed rows get a
-manual retry button. **Bounces** arrive after the request completes, so a small
-signature-verified **Resend webhook** endpoint flips the delivery/invitation to bounced
-(§8). Still no Celery/Redis — and no cron either. If scheduled auto-reminders are ever
-built, add a worker-loop sidecar (or Django's Tasks framework) *at that point*.
+**Background work: none — sends are synchronous, and now explicitly triggered (revised
+2026-08-10; cron still dropped).** Every notification is human-initiated (§2.4), so
+nothing runs on a clock. There *is* a queue now — the `deliveries` outbox (§5) — but
+**nothing drains it automatically**: it's a to-do list for a person, not a worker.
+Pressing *Send all pending emails* calls the provider **in the request**, batched (Resend's
+batch endpoint covers ~30 invites in one sub-second HTTP call), and the redirect carries
+the ✓/✗ counts. Failed rows land under *Needs attention* with a retry that puts them back
+in the queue rather than re-sending, so a bad address can be fixed in between. **Bounces**
+arrive after the request completes, so a small signature-verified **Resend webhook**
+endpoint flips the delivery/invitation to bounced (§8).
+
+The queue therefore buys the thing a cron queue usually doesn't: a **moment to look**
+between deciding to send and sending. Still no Celery/Redis and no cron. If scheduled
+auto-reminders are ever built, the outbox is already the right shape for a worker to
+drain — add a worker-loop sidecar (or Django's Tasks framework) *at that point*.
 
 **Dependencies + packaging: uv** (matching the sibling `../keep` project — `uv sync` /
 `uv run`, `[tool.uv] package = false`, single-stage uv Dockerfile). Deployed as **one
@@ -776,7 +825,7 @@ WhatsApp Business API, at per-message rates — if pursued.
 
 1. **Phase 1 — the complete product: core app + RSVP page + email + Messenger/WhatsApp
    assisted share.** The full functional spec in §2. Email sends links via Resend;
-   Messenger uses the assisted share flow (Web Share API + send queue) and WhatsApp uses
+   Messenger uses the assisted share flow (Web Share API + the manual queue) and WhatsApp uses
    `wa.me` deep links (§6). All lead back to the one RSVP page, so no inbound of any kind
    is needed. Per §3: keep this ruthlessly minimal. **This is the whole product** — there
    is no larger system it's a stepping-stone toward.
@@ -789,8 +838,8 @@ WhatsApp Business API, at per-message rates — if pursued.
 
 **Open decisions**
 - [x] Deployment path — **decided: Path A, self-host on Proxmox + Cloudflare Tunnel** (§9).
-- [x] App stack — **decided: Django + HTMX, Docker Compose, SQLite; synchronous sends
-      with `deliveries` as audit record — no cron/queue in v1** (§9).
+- [x] App stack — **decided: Django + HTMX, Docker Compose, SQLite; `deliveries` as a
+      human-drained outbox, sends synchronous on an explicit button — no cron/worker** (§9).
 - [x] Organizer auth — **decided: Cloudflare Access** (one-time PIN / Google for
       allow-listed emails; JWT→Django auto-login middleware preferred) (§8).
 - [x] Native calendar Accept/Decline (ICS REPLY) — **decided: out of scope, permanently**
@@ -816,7 +865,7 @@ per-phase gates in `IMPLEMENTATION_PLAN.md`):
 - [x] Organizer RSVP override with `actor=organizer` history; last-write-wins (§2.3).
 - [x] Add-to-calendar: `.ics` with stable `ics_uid` + Google Calendar link (§2.5).
 - [x] Notification templates: invite, nudge, update, cancellation, reminder (§2.4).
-- [x] Assisted share: `navigator.share` + desktop copy fallback + send queue (§6).
+- [x] Assisted share: `navigator.share` + desktop copy fallback + manual queue (§6).
 - [x] Delivery tracking: optimistic SHARED; first link click is the real signal (§2.3).
 - [x] PWA: manifest + service worker, organizer side only (§7).
 - [x] Security pass: strict CSP, autoescaping audit, `Referrer-Policy`, CSRF, token
@@ -857,8 +906,10 @@ needs an eventual decision: build it, or trim it from the spec.
    deletes any event (cascading its invitations and RSVP history); there is no archive
    state. Mitigation today: don't delete non-drafts.
 3. **Per-edit "notify guests / silent" choice** (§2.1, §2.6) — edits happen in the
-   Django admin with no notify prompt; notifying is the separate manual **Send update**
-   action on the send screen. Same outcome, different mechanism than specced.
+   Django admin with no notify prompt; notifying is the separate manual **Queue update**
+   action. *Now a deliberate decision rather than a gap* (2026-08-10): nothing is queued
+   on your behalf when an event changes, so that one rule holds everywhere — a message
+   exists because you asked for it (§2.4).
 4. **Quick-add contact inline** while building a guest list (§2.2) — *partially closed.*
    A dedicated hand-built **Contacts section** now exists at `/admin/contacts/`
    (`contacts_home` + `contact_new`/`contact_edit` + `household_new`/`household_edit` in
@@ -878,3 +929,10 @@ needs an eventual decision: build it, or trim it from the spec.
    POST/redirect/GET covered everything, and the dashboard updates on refresh rather
    than live-push. §1/§9 have been corrected to match; recorded here because "add
    HTMX" keeps *not* being needed — treat any future push for it with suspicion.
+
+**Closed by the outbox rework (2026-08-10):** the old §13 concern that delivery state was
+hard to reconcile — optimistic `shared` marks, sends scattered across three screens, "who
+still needs what" recomputed per request from session skips — is resolved by §2.3's
+queue-first model and the Messages screen. `Delivery.channel` is still `SET_NULL`, so a
+deleted channel now parks its queued message as `blocked` rather than sending to a
+snapshotted address that no longer exists.
