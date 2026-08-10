@@ -30,7 +30,16 @@ urlpatterns = [
     path("admin/events/<int:pk>/dashboard/", views.event_dashboard, name="event-dashboard"),
     path("admin/events/<int:pk>/invite/", views.event_invite, name="event-invite"),
     path("admin/events/<int:pk>/send/", views.event_send, name="event-send"),
-    path("admin/events/<int:pk>/queue/", views.event_queue, name="event-queue"),
+    # The outbox (§2.3): every message for an event, and the two ways they go out.
+    path("admin/events/<int:pk>/messages/", views.event_messages, name="event-messages"),
+    path(
+        "admin/events/<int:pk>/messages/send/",
+        views.event_send_pending,
+        name="event-send-pending",
+    ),
+    path("admin/events/<int:pk>/messages/walk/", views.event_queue, name="event-queue"),
+    path("admin/messages/<int:pk>/action/", views.message_action, name="message-action"),
+    path("admin/messages/<int:pk>/edit/", views.message_edit, name="message-edit"),
     path("admin/events/<int:pk>/polls/", views.event_poll_create, name="event-poll-create"),
     path("admin/polls/<int:pk>/", views.poll_action, name="poll-action"),
     path("admin/invitations/<int:pk>/action/", views.invitation_action, name="invitation-action"),

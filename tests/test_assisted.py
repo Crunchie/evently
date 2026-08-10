@@ -1,13 +1,17 @@
-"""Phase 5: channel routing, wa.me deep links, and the assisted send queue (§6).
-No network anywhere — assisted channels are share payloads + optimistic SHARED rows."""
+"""Channel routing, wa.me deep links, and the manual send queue (§6).
+
+No network anywhere. Assisted channels produce share payloads and outbox rows that only
+a human can mark sent — nothing here records a send on the organizer's behalf."""
 
 from datetime import timedelta
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from core.channels import assisted_channels, email_channels, route_channel, wa_link
+from core.channels import assisted_channels, email_channels, enqueue, route_channel, wa_link
 from core.models import Contact, ContactChannel, Delivery, Event, Household, Invitation
 
 Kind = ContactChannel.Kind
@@ -39,12 +43,6 @@ def make_contact(name, *channels):
             contact=contact, kind=kind, value=value, is_preferred=preferred
         )
     return contact
-
-
-def queue_url(event, **params):
-    url = reverse("event-queue", args=[event.pk])
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{url}?{query}" if query else url
 
 
 # --------------------------------------------------------------------------- #
@@ -93,152 +91,138 @@ def test_wa_link_rejects_garbage():
 
 
 # --------------------------------------------------------------------------- #
-#  The send queue: share → next (§6)
+#  Manual sends: the list, the walkthrough, and marking done by hand (§6/§7.3)
 # --------------------------------------------------------------------------- #
-def test_queue_walk_share_and_done(staff_client, event):
+def queue_invites(event):
+    """Put every invitation for this event in the outbox, as the organizer would."""
+    return enqueue(list(event.invitations.all()), "invite", "http://testserver")
+
+
+def test_sharing_alone_does_not_mark_a_message_sent(staff_client, event):
+    """The heart of the change: opening WhatsApp is not evidence anything was sent, so
+    only an explicit "Sent it" moves the row (§7.3)."""
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    queue_invites(event)
+
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "1 of 1" in page and "Dave" in page and "wa.me/64211234567" in page
+    assert inv.rsvp_path in page  # the link rides inside the message text
+
+    # Loading the card, following the link — none of it records a send.
+    delivery = inv.deliveries.get()
+    assert delivery.status == Delivery.Status.PENDING
+    inv.refresh_from_db()
+    assert inv.state == State.QUEUED
+
+    # Only the explicit mark does.
+    staff_client.post(reverse("message-action", args=[delivery.pk]), {"action": "mark_sent"})
+    delivery.refresh_from_db()
+    inv.refresh_from_db()
+    assert delivery.status == Delivery.Status.SENT
+    assert delivery.sent_at is not None and delivery.sent_by.username == "sam"
+    assert inv.state == State.SHARED  # assisted channel → shared, not sent
+
+
+def test_walkthrough_advances_and_finishes(staff_client, event):
     dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
     ana = make_contact("Ana", (Kind.MESSENGER, "", True))
     inv_dave = Invitation.objects.create(event=event, contact=dave)
     inv_ana = Invitation.objects.create(event=event, contact=ana)
+    queue_invites(event)
 
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "1 of 2" in page and "Dave" in page and "wa.me/64211234567" in page
-    assert inv_dave.rsvp_path in page  # the link rides inside the message text
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "1 of 2" in page and "Dave" in page
 
-    resp = staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "shared",
-            "kind": "invite",
-            "n": 0,
-            "invitation": inv_dave.pk,
-            "channel": dave.channels.get().pk,
-        },
+    staff_client.post(
+        reverse("message-action", args=[inv_dave.deliveries.get().pk]), {"action": "mark_sent"}
     )
-    assert resp.status_code == 302 and "n=0" in resp["Location"]  # list shrank under n
-
-    inv_dave.refresh_from_db()
-    assert inv_dave.state == State.SHARED
-    delivery = inv_dave.deliveries.get()
-    assert delivery.status == Delivery.Status.SENT and delivery.channel_kind == Kind.WHATSAPP
-
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
     assert "1 of 1" in page and "Ana" in page and "Share" in page  # messenger card
 
     staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "shared",
-            "kind": "invite",
-            "n": 0,
-            "invitation": inv_ana.pk,
-            "channel": ana.channels.get().pk,
-        },
+        reverse("message-action", args=[inv_ana.deliveries.get().pk]), {"action": "mark_sent"}
     )
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "Queue done" in page
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "All done" in page
 
 
-def test_queue_skip_parks_and_is_reviewable(staff_client, event):
-    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
-    inv = Invitation.objects.create(event=event, contact=dave)
-
-    staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "skip",
-            "kind": "invite",
-            "invitation": inv.pk,
-            "channel": dave.channels.get().pk,
-        },
-    )
-    inv.refresh_from_db()
-    assert inv.state == State.PENDING and not inv.deliveries.exists()  # skip sends nothing
-
-    # Parked, not gone: the walk shows the skipped tally + a way back, not the plain done screen.
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "1 skipped" in page and "Review" in page and "Dave" not in page
-
-    # "Review skipped" un-parks everyone so they re-enter the walk.
-    staff_client.get(queue_url(event, kind="invite", review_skipped="1"))
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "Dave" in page and "1 of 1" in page
-
-
-def test_queue_skip_persists_across_visits(staff_client, event):
-    """Two WhatsApp guests: skipping the first parks it so the second is served, and a
-    fresh page load doesn't resurface the skipped one first (§6)."""
+def test_skip_sinks_a_card_and_persists(staff_client, event):
+    """Deferral lives on the row, not the session, so the walk survives a new browser."""
     a = make_contact("Alice", (Kind.WHATSAPP, "+64211111111", True))
     b = make_contact("Bob", (Kind.WHATSAPP, "+64222222222", True))
     inv_a = Invitation.objects.create(event=event, contact=a)
     Invitation.objects.create(event=event, contact=b)
+    queue_invites(event)
 
     staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "skip",
-            "kind": "invite",
-            "invitation": inv_a.pk,
-            "channel": a.channels.get().pk,
-        },
+        reverse("message-action", args=[inv_a.deliveries.get().pk]), {"action": "defer"}
     )
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "Bob" in page and "Alice" not in page and "1 skipped" in page
+    assert inv_a.deliveries.get().status == Delivery.Status.PENDING  # skip sends nothing
+    assert inv_a.deliveries.get().deferred_at is not None
+
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "Bob" in page and "1 of 2" in page  # Alice sank to the bottom, still counted
+
+    # A brand-new client (no session) sees the same order — this used to be session state.
+    fresh = Client()
+    fresh.force_login(get_user_model().objects.get(username="sam"))
+    page = fresh.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "Bob" in page
 
 
-def test_dashboard_prompts_for_outstanding_assisted_shares(staff_client, event):
+def test_messages_page_lists_manual_sends_with_actions(staff_client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    Invitation.objects.create(event=event, contact=dave)
+    queue_invites(event)
+
+    page = staff_client.get(reverse("event-messages", args=[event.pk])).content.decode()
+    assert "Manual sends — 1 to do" in page
+    assert "Dave" in page and "wa.me/64211234567" in page
+    assert "Mark sent" in page and "Work through them" in page
+
+
+def test_dashboard_prompts_for_waiting_messages(staff_client, event):
     dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
     inv = Invitation.objects.create(event=event, contact=dave)
     dash_url = reverse("event-dashboard", args=[event.pk])
 
-    dash = staff_client.get(dash_url).content.decode()
-    assert "still need" in dash and "Open send queue" in dash  # the prompt is visible
+    assert "waiting to send" not in staff_client.get(dash_url).content.decode()
+    queue_invites(event)
 
-    # Share it → the standing to-do clears.
+    dash = staff_client.get(dash_url).content.decode()
+    assert "1 message waiting to send" in dash and "Open messages" in dash
+
     staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "shared",
-            "kind": "invite",
-            "invitation": inv.pk,
-            "channel": dave.channels.get().pk,
-        },
+        reverse("message-action", args=[inv.deliveries.get().pk]), {"action": "mark_sent"}
     )
-    dash = staff_client.get(dash_url).content.decode()
-    assert "still need" not in dash
+    assert "waiting to send" not in staff_client.get(dash_url).content.decode()
 
 
-def test_household_two_whatsapp_parents_two_taps_same_link(staff_client, event):
+def test_household_two_whatsapp_parents_two_rows_same_link(staff_client, event):
     hh = Household.objects.create(name="The Hendersons")
     for name, phone in (("Jane", "+64211111111"), ("Mark", "+64222222222")):
         contact = make_contact(name, (Kind.WHATSAPP, phone, True))
         contact.household = hh
         contact.save()
     inv = Invitation.objects.create(event=event, household=hh)
+    queue_invites(event)
 
-    items_page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "1 of 2" in items_page
+    assert inv.deliveries.count() == 2  # one row per parent...
+    assert {d.body for d in inv.deliveries.all()} == {inv.deliveries.first().body}  # ...same words
+    assert all(inv.rsvp_path in d.body for d in inv.deliveries.all())  # ...same link
 
-    # Share to parent one — the envelope must STAY queued for parent two.
-    jane_channel = ContactChannel.objects.get(value="+64211111111")
-    staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "shared",
-            "kind": "invite",
-            "n": 0,
-            "invitation": inv.pk,
-            "channel": jane_channel.pk,
-        },
-    )
-    page = staff_client.get(queue_url(event, kind="invite")).content.decode()
-    assert "1 of 1" in page and "wa.me/64222222222" in page
-    # both deliveries reference the same envelope → same link
-    assert inv.deliveries.count() == 1
-    assert inv.rsvp_path in page
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "1 of 2" in page and "One of 2 in this household" in page
+
+    jane_row = inv.deliveries.get(address_used="+64211111111")
+    staff_client.post(reverse("message-action", args=[jane_row.pk]), {"action": "mark_sent"})
+
+    page = staff_client.get(reverse("event-queue", args=[event.pk])).content.decode()
+    assert "1 of 1" in page and "wa.me/64222222222" in page  # Mark still owed his
 
 
-def test_mixed_household_splits_email_and_queue(db, event):
+def test_mixed_household_splits_email_and_manual(staff_client, event):
     hh = Household.objects.create(name="Mixed")
     emailer = make_contact("Jane", (Kind.EMAIL, "jane@x.com", True))
     sharer = make_contact("Mark", (Kind.WHATSAPP, "+64222222222", True))
@@ -249,8 +233,12 @@ def test_mixed_household_splits_email_and_queue(db, event):
     assert [ch.value for ch in email_channels(inv)] == ["jane@x.com"]
     assert [ch.value for ch in assisted_channels(inv)] == ["+64222222222"]
 
+    queue_invites(event)
+    page = staff_client.get(reverse("event-messages", args=[event.pk])).content.decode()
+    assert "Pending email — 1" in page and "Manual sends — 1 to do" in page
 
-def test_nudge_queue_targets_only_nonresponders(staff_client, event):
+
+def test_nudge_queues_only_nonresponders(staff_client, event):
     quiet = Invitation.objects.create(
         event=event, contact=make_contact("Quiet", (Kind.WHATSAPP, "+64211234567", True))
     )
@@ -262,27 +250,50 @@ def test_nudge_queue_targets_only_nonresponders(staff_client, event):
     attendee = replied.attendees.get()
     staff_client.post(replied.rsvp_path, {f"status_{attendee.pk}": "going"})
 
-    page = staff_client.get(queue_url(event, kind="nudge")).content.decode()
-    assert "1 of 1" in page and "Quiet" in page and "Fast" not in page
+    staff_client.post(reverse("event-send", args=[event.pk]), {"action": "nudge"})
+    nudges = Delivery.objects.filter(message_kind="nudge")
+    assert [d.invitation_id for d in nudges] == [quiet.pk]
 
 
+# --------------------------------------------------------------------------- #
+#  Guardrails
+# --------------------------------------------------------------------------- #
 def test_queue_requires_staff(client, event):
-    assert client.get(queue_url(event, kind="invite")).status_code == 302  # login redirect
+    assert client.get(reverse("event-queue", args=[event.pk])).status_code == 302
 
 
-def test_queue_rejects_unknown_kind(staff_client, event):
-    assert staff_client.get(queue_url(event, kind="hax")).status_code == 403
-
-
-def test_queue_post_with_garbage_ids_is_a_404_not_a_500(staff_client, event):
-    resp = staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {"action": "shared", "kind": "invite", "n": 0, "invitation": "abc", "channel": "abc"},
+def test_message_action_requires_staff(client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    queue_invites(event)
+    resp = client.post(
+        reverse("message-action", args=[inv.deliveries.get().pk]), {"action": "mark_sent"}
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 302  # login redirect
+    assert inv.deliveries.get().status == Delivery.Status.PENDING
 
 
-def test_queue_rejects_unapproved_proposed_channel(staff_client, event):
+def test_message_action_rejects_unknown_action(staff_client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    queue_invites(event)
+    resp = staff_client.post(
+        reverse("message-action", args=[inv.deliveries.get().pk]), {"action": "hax"}
+    )
+    assert resp.status_code == 403
+
+
+def test_message_action_on_missing_row_is_404(staff_client, event):
+    assert (
+        staff_client.post(reverse("message-action", args=[999999]), {"action": "defer"}).status_code
+        == 404
+    )
+
+
+def test_a_guest_proposed_channel_is_never_queued(staff_client, event):
+    """A guest-requested channel is untrusted until approved (§8). The outbox can't
+    contain one because enqueue only ever routes to ACTIVE channels — the old code had
+    to re-check this at share time."""
     dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
     inv = Invitation.objects.create(event=event, contact=dave)
     proposed = ContactChannel.objects.create(
@@ -292,15 +303,18 @@ def test_queue_rejects_unapproved_proposed_channel(staff_client, event):
         status=ContactChannel.Status.PROPOSED,
         source=ContactChannel.Source.GUEST,
     )
+    queue_invites(event)
+
+    addresses = {d.address_used for d in inv.deliveries.all()}
+    assert addresses == {"+64211234567"}
+    assert proposed.value not in addresses
+
+
+def test_retry_is_only_for_failed_rows(staff_client, event):
+    dave = make_contact("Dave", (Kind.WHATSAPP, "+64211234567", True))
+    inv = Invitation.objects.create(event=event, contact=dave)
+    queue_invites(event)
     resp = staff_client.post(
-        reverse("event-queue", args=[event.pk]),
-        {
-            "action": "shared",
-            "kind": "invite",
-            "n": 0,
-            "invitation": inv.pk,
-            "channel": proposed.pk,
-        },
+        reverse("message-action", args=[inv.deliveries.get().pk]), {"action": "retry"}
     )
     assert resp.status_code == 403
-    assert not inv.deliveries.exists()

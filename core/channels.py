@@ -11,11 +11,13 @@ and within assisted, direct targeting beats friend-picking). A household envelop
 route different members down different paths — email copies go in the batch, assisted
 members appear in the send queue, all carrying the same link.
 
-Sends are **synchronous in the request** (§9 — no cron, no queue): the view calls
-`dispatch_email()` and gets per-delivery outcomes back immediately; assisted "sends"
-are Delivery rows marked SHARED when the organizer invokes the share (optimistic —
-the guest clicking the link is the real signal). `Delivery` rows are the audit
-record; bounces arrive later via the signature-verified webhook (views).
+**Nothing is sent as a side effect of anything (§2.3).** Every action that needs to
+reach guests calls `enqueue()`, which writes `pending` Delivery rows and stops. Email
+leaves when the organizer presses the button on the Messages screen
+(`send_pending_emails()`, still synchronous in the request — §9, no cron); assisted
+messages leave when a human shares them and says so (`mark_sent()`). The outbox is the
+one place that knows what is owed and what has gone; bounces arrive later via the
+signature-verified webhook (views).
 """
 
 from urllib.parse import quote
@@ -27,7 +29,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
 
-from .messaging import build_message
+from . import messaging
 from .models import ContactChannel, Delivery, Event, Invitation
 
 RESEND_BATCH_LIMIT = 100
@@ -191,47 +193,132 @@ def assisted_channels(invitation: Invitation) -> list[ContactChannel]:
     return channels
 
 
-def dispatch_email(invitations, kind: str, base_url: str) -> dict:
-    """Send `kind` to each invitation's resolved email address(es), synchronously.
+# --------------------------------------------------------------------------- #
+#  The outbox: enqueue → send / mark sent (§2.3)
+# --------------------------------------------------------------------------- #
+def rsvp_url(invitation: Invitation, base_url: str) -> str:
+    return base_url + invitation.rsvp_path
 
-    Creates one Delivery per address (audit, §5), sends via the batch endpoint, marks
-    each SENT/FAILED, and advances invitation state through the monotonic ladder.
-    Returns {"sent": n, "failed": n, "skipped": n} for the review screen's ✓/✗.
+
+def enqueue(invitations, message_kind: str, base_url: str) -> dict:
+    """Write `pending` outbox rows for `message_kind`. **Sends nothing.**
+
+    One row per resolved channel — a household with two WhatsApp parents gets two, both
+    carrying the same link. A guest with no usable channel gets a single `blocked` row
+    rather than being silently dropped: the outbox is meant to be the complete list, and
+    "nobody to send this to" is information the organizer needs.
+
+    Idempotent (§9): a channel that already holds a pending row for this kind is left
+    alone, so pressing "queue nudge" twice queues one nudge. Counted as `already_queued`
+    so the banner can say so instead of pretending it queued something.
     """
-    deliveries: list[tuple[Delivery, Invitation]] = []
-    messages: list[dict] = []
-    skipped = 0
-
+    queued = blocked = already = 0
     for invitation in invitations:
-        channels = email_channels(invitation)
-        if not channels:
-            skipped += 1
+        url = rsvp_url(invitation, base_url)
+        subject, text = messaging.render(message_kind, invitation, url)
+        targets = email_channels(invitation) + assisted_channels(invitation)
+
+        if not targets:
+            # No channel at all. One blocked row per (invitation, kind) — the partial
+            # unique constraint enforces it; get_or_create keeps a re-queue quiet.
+            _, created = Delivery.objects.get_or_create(
+                invitation=invitation,
+                message_kind=message_kind,
+                status=Delivery.Status.BLOCKED,
+                channel=None,
+                defaults={"subject": subject, "body": text},
+            )
+            blocked += 1 if created else 0
+            already += 0 if created else 1
             continue
-        message = build_message(kind, invitation, base_url + invitation.rsvp_path)
-        for channel in channels:
-            delivery = Delivery.objects.create(
+
+        pending_channel_ids = set(
+            Delivery.objects.filter(
+                invitation=invitation,
+                message_kind=message_kind,
+                status=Delivery.Status.PENDING,
+            ).values_list("channel_id", flat=True)
+        )
+        new_rows = 0
+        for channel in targets:
+            if channel.pk in pending_channel_ids:
+                already += 1
+                continue
+            Delivery.objects.create(
                 invitation=invitation,
                 channel=channel,
-                channel_kind=ContactChannel.Kind.EMAIL,
-                message_kind=kind,
+                channel_kind=channel.kind,
+                message_kind=message_kind,
                 address_used=channel.value,
                 status=Delivery.Status.PENDING,
+                subject=subject,
+                body=text,
             )
-            messages.append(
-                {
-                    "from": settings.EMAIL_FROM,
-                    "to": [channel.value],
-                    "reply_to": settings.EMAIL_REPLY_TO or None,
-                    "subject": message["subject"],
-                    "text": message["text"],
-                    "html": message["html"],
-                    # List-Unsubscribe is a deliverability trust signal (Gmail/Yahoo bulk
-                    # guidance). mailto only — we have no one-click POST endpoint, so we
-                    # deliberately omit List-Unsubscribe-Post rather than claim it falsely.
-                    "headers": _list_unsubscribe_headers(),
-                }
-            )
-            deliveries.append((delivery, invitation))
+            new_rows += 1
+        queued += new_rows
+        if new_rows:
+            invitation.advance_state(Invitation.State.QUEUED)
+    return {"queued": queued, "blocked": blocked, "already_queued": already}
+
+
+def _body_for_send(delivery: Delivery, base_url: str) -> tuple[str, str, str]:
+    """(subject, text, url) for a row about to go out.
+
+    An **edited** row is sent verbatim — those are the organizer's words. An unedited row
+    is re-rendered from current event data and its snapshot refreshed, so fixing a typo in
+    the event reaches everyone whose message hasn't left yet, without queueing a second
+    one (§12.3). This is the only place that rule lives.
+    """
+    url = rsvp_url(delivery.invitation, base_url)
+    if delivery.is_edited:
+        return delivery.subject, delivery.body, url
+    subject, text = messaging.render(delivery.message_kind, delivery.invitation, url)
+    if (subject, text) != (delivery.subject, delivery.body):
+        delivery.subject, delivery.body = subject, text
+        delivery.save(update_fields=["subject", "body", "updated_at"])
+    return subject, text, url
+
+
+def pending_email(event: Event):
+    """The rows the Send button will send, in the order the screen lists them."""
+    return (
+        Delivery.objects.filter(
+            invitation__event=event,
+            status=Delivery.Status.PENDING,
+            channel_kind=Kind.EMAIL,
+        )
+        .select_related("invitation__contact", "invitation__household", "invitation__event")
+        .order_by("id")
+    )
+
+
+def send_pending_emails(event, base_url: str, *, actor=None) -> dict:
+    """Send every pending email row for this event, whatever the message kind.
+
+    No kind or subset argument by design (§7.2): holding one message back is cancelling
+    its row first, so the button always means "send what the list shows". Batched through
+    Resend exactly as the old synchronous sender was, marking each row sent/failed and
+    advancing the envelope. Returns {"sent": n, "failed": n}.
+    """
+    deliveries = list(pending_email(event))
+    messages = []
+    for delivery in deliveries:
+        subject, text, url = _body_for_send(delivery, base_url)
+        message = messaging.email_payload(subject, text, url, delivery.message_kind)
+        messages.append(
+            {
+                "from": settings.EMAIL_FROM,
+                "to": [delivery.address_used],
+                "reply_to": settings.EMAIL_REPLY_TO or None,
+                "subject": message["subject"],
+                "text": message["text"],
+                "html": message["html"],
+                # List-Unsubscribe is a deliverability trust signal (Gmail/Yahoo bulk
+                # guidance). mailto only — we have no one-click POST endpoint, so we
+                # deliberately omit List-Unsubscribe-Post rather than claim it falsely.
+                "headers": _list_unsubscribe_headers(),
+            }
+        )
 
     sent = failed = 0
     now = timezone.now()
@@ -240,28 +327,74 @@ def dispatch_email(invitations, kind: str, base_url: str) -> dict:
         try:
             ids = send_email_batch(messages[start : start + RESEND_BATCH_LIMIT])
         except Exception as exc:  # provider/network error — fail this chunk, keep audit
-            for delivery, _ in batch:
-                delivery.status = Delivery.Status.FAILED
-                delivery.error = str(exc)[:500]
-                delivery.save(update_fields=["status", "error", "updated_at"])
+            for delivery in batch:
+                _fail(delivery, str(exc)[:500])
             failed += len(batch)
             continue
-        for (delivery, invitation), provider_id in zip(batch, ids, strict=False):
+        for delivery, provider_id in zip(batch, ids, strict=False):
             delivery.status = Delivery.Status.SENT
             delivery.provider_message_id = provider_id or ""
             delivery.sent_at = now
-            delivery.save(update_fields=["status", "provider_message_id", "sent_at", "updated_at"])
-            invitation.advance_state(Invitation.State.SENT)
+            delivery.sent_by = actor if actor and actor.is_authenticated else None
+            delivery.save(
+                update_fields=["status", "provider_message_id", "sent_at", "sent_by", "updated_at"]
+            )
+            delivery.invitation.advance_state(Invitation.State.SENT)
             sent += 1
-        # Provider returned fewer ids than messages: the unmatched tail would
-        # otherwise sit QUEUED forever, invisible to the ✓/✗ counts.
-        for delivery, _ in batch[len(ids) :]:
-            delivery.status = Delivery.Status.FAILED
-            delivery.error = "provider returned no message id"
-            delivery.save(update_fields=["status", "error", "updated_at"])
+        # Provider returned fewer ids than messages: the unmatched tail would otherwise
+        # sit pending forever, invisible to the ✓/✗ counts.
+        for delivery in batch[len(ids) :]:
+            _fail(delivery, "provider returned no message id")
             failed += 1
 
-    return {"sent": sent, "failed": failed, "skipped": skipped}
+    return {"sent": sent, "failed": failed}
+
+
+def _fail(delivery: Delivery, error: str) -> None:
+    delivery.status = Delivery.Status.FAILED
+    delivery.error = error
+    delivery.save(update_fields=["status", "error", "updated_at"])
+
+
+def mark_sent(delivery: Delivery, actor=None) -> None:
+    """Record that a message went out by hand (§7.3).
+
+    The organizer's word is the signal — the app never marks an assisted message sent on
+    their behalf, because opening a share sheet is not evidence that anything was sent.
+    Advances the envelope to SHARED for an assisted channel, SENT otherwise (an email row
+    the organizer handled from their own inbox, or a blocked row they covered in person).
+    """
+    delivery.status = Delivery.Status.SENT
+    delivery.sent_at = timezone.now()
+    delivery.sent_by = actor if actor and actor.is_authenticated else None
+    delivery.deferred_at = None
+    delivery.save(update_fields=["status", "sent_at", "sent_by", "deferred_at", "updated_at"])
+    state = (
+        Invitation.State.SHARED
+        if delivery.channel_kind in ASSISTED_KINDS
+        else Invitation.State.SENT
+    )
+    delivery.invitation.advance_state(state)
+
+
+def cancel_pending(event: Event, *, exclude_kind: str | None = None) -> int:
+    """Drop every message still waiting to go out for this event.
+
+    Used when cancelling an event: sending an invite *after* the cancellation notice is
+    the worst thing this system could do, so the queue is cleared before the cancellation
+    is queued (§9). Returns how many were dropped.
+    """
+    rows = Delivery.objects.filter(invitation__event=event, status__in=Delivery.OUTSTANDING)
+    if exclude_kind:
+        rows = rows.exclude(message_kind=exclude_kind)
+    return rows.update(status=Delivery.Status.CANCELLED, updated_at=timezone.now())
+
+
+def cancel_pending_for(invitation: Invitation) -> int:
+    """Same, for one envelope — uninviting someone shouldn't leave their invite queued."""
+    return Delivery.objects.filter(invitation=invitation, status__in=Delivery.OUTSTANDING).update(
+        status=Delivery.Status.CANCELLED, updated_at=timezone.now()
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -272,24 +405,14 @@ NON_RESPONDER_STATES = (S.SENT, S.SHARED, S.OPENED)  # went out, no answer (boun
 NOTIFIED_STATES = (S.SENT, S.SHARED, S.OPENED, S.RESPONDED, S.BOUNCED)  # ever reached
 
 
-def shared_channel_pairs(event: Event) -> set[tuple[int, int]]:
-    """(invitation_id, channel_id) pairs whose assisted copy has gone out — a household
-    stays in the invite queue until *each* one has. Assisted sends are SENT rows on an
-    assisted channel: there is no separate SHARED status, because "sent" for a manual
-    channel already means the organizer confirmed they sent it."""
-    return set(
-        Delivery.objects.filter(
-            invitation__event=event,
-            status=Delivery.Status.SENT,
-            channel_kind__in=ASSISTED_KINDS,
-        ).values_list("invitation_id", "channel_id")
-    )
-
-
 def send_targets(event: Event) -> dict:
-    """The review-screen breakdown: who gets what, before anything is sent. Each
-    action has an email list (dispatched in-request) and an assisted list (walked
-    through the send queue); a mixed-route household can appear in both."""
+    """Who the audience is for each action — **not** what's outstanding.
+
+    Since the outbox stores what's owed, "still to do" is a query on Delivery, not a
+    computation here (§4.4). What survives is the genuinely per-action question: who
+    should receive a nudge, an update, a reminder? Each value is a list of envelopes to
+    hand to `enqueue()`, which then works out their channels.
+    """
     invitations = list(
         event.invitations.select_related("contact", "household").prefetch_related(
             "contact__channels", "household__members__channels", "attendees"
@@ -297,22 +420,14 @@ def send_targets(event: Event) -> dict:
     )
     by_state = lambda *states: [i for i in invitations if i.state in states]  # noqa: E731
 
-    shared_pairs = shared_channel_pairs(event)
-    # One query, not one per invitation: which envelopes have a failed delivery.
-    failed_ids = set(
-        Delivery.objects.filter(invitation__event=event, status=Delivery.Status.FAILED).values_list(
+    # Envelopes with a send that didn't land. A retry re-queues them, so a bounced
+    # address gets another go once the organizer has fixed or switched the channel.
+    retryable_ids = set(
+        Delivery.objects.filter(invitation__event=event, status__in=Delivery.RETRYABLE).values_list(
             "invitation_id", flat=True
         )
     )
 
-    def unshared_assisted(invitation):
-        return [
-            ch for ch in assisted_channels(invitation) if (invitation.pk, ch.pk) not in shared_pairs
-        ]
-
-    pending = by_state(S.PENDING, S.QUEUED)
-    non_responders = by_state(*NON_RESPONDER_STATES)
-    notified = by_state(*NOTIFIED_STATES)
     # Day-before reminder (§2.4): everyone with at least one Going/Maybe answer.
     reminder = [
         i
@@ -324,27 +439,9 @@ def send_targets(event: Event) -> dict:
         )
     ]
     return {
-        "pending_with_email": [i for i in pending if email_channels(i)],
-        # Invite-queue targets: envelopes with an assisted copy still to go. Includes
-        # SENT — a mixed-route household emailed to one member still owes its WhatsApp/
-        # Messenger members their share (the envelope advances to SENT on the email, but
-        # the assisted copies aren't done). SHARED stays too (two-WhatsApp-parents: one
-        # copy shared, one to go). unshared_assisted() drops anyone fully covered.
-        "pending_assisted": [
-            i for i in by_state(S.PENDING, S.QUEUED, S.SENT, S.SHARED) if unshared_assisted(i)
-        ],
-        "pending_no_channel": [
-            i for i in pending if not email_channels(i) and not assisted_channels(i)
-        ],
-        "retryable": [
-            i
-            for i in invitations
-            if i.state == S.BOUNCED or (i.state == S.PENDING and i.pk in failed_ids)
-        ],
-        "non_responders": [i for i in non_responders if email_channels(i)],
-        "non_responders_assisted": [i for i in non_responders if assisted_channels(i)],
-        "notified": notified,
-        "notified_assisted": [i for i in notified if assisted_channels(i)],
-        "reminder_email": [i for i in reminder if email_channels(i)],
-        "reminder_assisted": [i for i in reminder if assisted_channels(i)],
+        "invites": by_state(S.PENDING, S.QUEUED),
+        "retryable": [i for i in invitations if i.pk in retryable_ids],
+        "non_responders": by_state(*NON_RESPONDER_STATES),
+        "notified": by_state(*NOTIFIED_STATES),
+        "reminder": reminder,
     }

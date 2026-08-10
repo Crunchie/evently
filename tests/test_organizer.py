@@ -123,25 +123,27 @@ def test_event_invite_page_lists_only_uninvited_contacts(staff_client, event):
     assert f'value="{invited.pk}"'.encode() not in resp.content  # Alice already invited
 
 
-def test_event_invite_creates_invitations_and_redirects_to_dashboard(
-    staff_client, event, fake_send
-):
+def test_event_invite_queues_and_lands_on_messages(staff_client, event, fake_send):
+    """Adding guests queues their invites and sends nothing — the messages wait in the
+    outbox, so we land on Messages where the send button is (§2.3)."""
     a = contact_with_email("Alice", "a@x.com")
     b = contact_with_email("Bob", "b@x.com")
 
     resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [a.pk, b.pk]})
     assert resp.status_code == 302
-    assert reverse("event-dashboard", args=[event.pk]) in resp.url
+    assert reverse("event-messages", args=[event.pk]) in resp.url
     assert Invitation.objects.filter(event=event).count() == 2
     assert InvitationAttendee.objects.filter(invitation__event=event).count() == 2
-    # Adding is inviting: the email invites went out immediately.
-    assert len(fake_send[0]) == 2  # one batch, both emails
-    assert all(i.state == State.SENT for i in Invitation.objects.filter(event=event))
-    assert "2+emailed" in resp.url
+
+    assert not fake_send  # nothing went out
+    assert all(i.state == State.QUEUED for i in Invitation.objects.filter(event=event))
+    assert Delivery.objects.filter(status=Delivery.Status.PENDING).count() == 2
+    assert "2+messages+queued" in resp.url
 
 
-def test_event_invite_auto_sends_and_activates_draft(staff_client, fake_send):
-    """Adding an email guest to a draft event sends the invite and flips it active (§2.1/§2.3)."""
+def test_event_invite_activates_a_draft(staff_client, fake_send):
+    """Adding a guest to a draft flips it active (§2.1). This has to happen at *add*
+    time now: can_rsvp needs ACTIVE, and sending is a separate step later."""
     draft = Event.objects.create(
         title="Draft Do", starts_at=timezone.now() + timedelta(days=3), status=Event.Status.DRAFT
     )
@@ -149,22 +151,24 @@ def test_event_invite_auto_sends_and_activates_draft(staff_client, fake_send):
 
     staff_client.post(reverse("event-invite", args=[draft.pk]), {"contacts": [alice.pk]})
     draft.refresh_from_db()
-    assert draft.status == Event.Status.ACTIVE  # first send flips draft → active
-    assert Invitation.objects.get(event=draft, contact=alice).state == State.SENT
-    assert len(fake_send[0]) == 1
+    assert draft.status == Event.Status.ACTIVE
+    assert Invitation.objects.get(event=draft, contact=alice).state == State.QUEUED
+    assert not fake_send
 
 
-def test_event_invite_assisted_guest_not_emailed_but_queued(staff_client, event, fake_send):
-    """A WhatsApp-only guest can't be emailed — no send, stays PENDING for the queue."""
+def test_event_invite_assisted_guest_queued_as_manual(staff_client, event, fake_send):
+    """A WhatsApp-only guest gets a manual row, not an email one."""
     wa = Contact.objects.create(name="Wanda")
     ContactChannel.objects.create(
         contact=wa, kind=Kind.WHATSAPP, value="+64211111111", is_preferred=True
     )
 
     resp = staff_client.post(reverse("event-invite", args=[event.pk]), {"contacts": [wa.pk]})
-    assert not fake_send  # nothing emailed
-    assert Invitation.objects.get(event=event, contact=wa).state == State.PENDING
-    assert "share+via+the+send+queue" in resp.url
+    assert not fake_send
+    inv = Invitation.objects.get(event=event, contact=wa)
+    assert inv.state == State.QUEUED
+    assert inv.deliveries.get().channel_kind == Kind.WHATSAPP
+    assert "1+message+queued" in resp.url
 
 
 def test_event_invite_skips_already_invited(staff_client, event):
@@ -352,16 +356,18 @@ def test_regenerate_rotates_the_token(staff_client, client, event):
 
 
 def test_single_guest_resend_and_nudge(staff_client, event, fake_send):
+    """Per-guest actions queue for that guest alone."""
     inv = Invitation.objects.create(event=event, contact=contact_with_email("Dave", "d@x.com"))
     other = Invitation.objects.create(event=event, contact=contact_with_email("Ana", "a@x.com"))
 
     staff_client.post(reverse("invitation-action", args=[inv.pk]), {"action": "resend"})
-    assert [m["to"] for m in fake_send[0]] == [["d@x.com"]]  # only Dave, not Ana
+    assert [d.address_used for d in Delivery.objects.all()] == ["d@x.com"]  # Dave only
 
     staff_client.post(reverse("invitation-action", args=[inv.pk]), {"action": "nudge"})
-    assert "hoping" in fake_send[1][0]["subject"]
+    assert "hoping" in inv.deliveries.get(message_kind="nudge").subject
     other.refresh_from_db()
     assert other.state == State.PENDING
+    assert not other.deliveries.exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -598,10 +604,14 @@ def test_reminder_goes_to_going_and_maybe_only(staff_client, event, fake_send):
 
     fake_send.clear()
     resp = staff_client.post(reverse("event-send", args=[event.pk]), {"action": "reminder"})
-    assert "sent=2" in resp["Location"]
-    recipients = {m["to"][0] for m in fake_send[0]}
-    assert recipients == {"yes@x.com", "maybe@x.com"}
-    assert "See you" in fake_send[0][0]["subject"]
+    assert "queued=2" in resp["Location"]
+
+    reminders = Delivery.objects.filter(message_kind="reminder")
+    assert {d.address_used for d in reminders} == {"yes@x.com", "maybe@x.com"}
+    assert all("See you" in d.subject for d in reminders)
+
+    staff_client.post(reverse("event-send-pending", args=[event.pk]))
+    assert {m["to"][0] for m in fake_send[0]} == {"yes@x.com", "maybe@x.com"}
 
 
 def test_dashboard_prompts_reminder_near_event(staff_client, event):

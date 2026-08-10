@@ -1,0 +1,45 @@
+{% extends "core/org_base.html" %}
+{% block title %}Edit message — {{ event.title }}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap">
+
+  <p class="crumbs"><a href="{% url 'event-messages' event.pk %}">← messages</a></p>
+  <h1>Edit message</h1>
+  <p class="meta">To <strong>{{ m.recipient }}</strong>
+    · {{ m.get_message_kind_display|lower }}
+    · {% if m.address_used %}{{ m.address_used }}{% else %}{{ m.get_channel_kind_display|default:"no channel" }}{% endif %}</p>
+
+  {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+
+  <section class="card">
+    <form method="post">
+      {% csrf_token %}
+      {% if is_email %}
+      <label class="fld">
+        <span>Subject</span>
+        <input type="text" name="subject" value="{{ m.subject }}" maxlength="255">
+      </label>
+      {% else %}
+      <input type="hidden" name="subject" value="{{ m.subject }}">
+      {% endif %}
+
+      <label class="fld">
+        <span>Message</span>
+        <textarea name="body" rows="14" required>{{ m.body }}</textarea>
+      </label>
+
+      <p class="sub">Their personal link <code>{{ rsvp_url }}</code> has to stay in the
+        message — it's how they reply. In the email version it becomes the button.</p>
+      <p class="sub">Editing stops this message auto-updating when you change the event.
+        Revert it on the messages screen to get that back.</p>
+
+      <div class="actions">
+        <button class="save">Save message</button>
+        <a class="btn" href="{% url 'event-messages' event.pk %}">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+</main>
+{% endblock %}

@@ -11,13 +11,15 @@
   <p class="meta">{{ event.starts_at|date:"D, j M Y · g:i A" }}{% if event.location_text %} · {{ event.location_text }}{% endif %}
     · <a href="{% url 'admin:core_event_change' event.pk %}">edit in admin</a>
     · <a href="{% url 'event-invite' event.pk %}"><strong>➕ add guests</strong></a>
-    · <a href="{% url 'event-send' event.pk %}"><strong>✉️ send &amp; notify</strong></a>
+    · <a href="{% url 'event-messages' event.pk %}"><strong>📮 messages{% if waiting.total %} ({{ waiting.total }}){% endif %}</strong></a>
+    · <a href="{% url 'event-send' event.pk %}">✉️ queue messages</a>
     · <a href="{% url 'contacts-home' %}">👥 contacts</a></p>
 
   {% if result %}
   <div class="banner {% if result.failed and result.failed != '0' %}bad{% else %}ok{% endif %}">
     {% if result.msg %}{{ result.did|capfirst }}: {{ result.msg }}{% else %}
-    {{ result.did|capfirst }}: {{ result.sent }} sent{% if result.failed != '0' %} · {{ result.failed }} failed{% endif %}{% if result.skipped != '0' %} · {{ result.skipped }} skipped (no email — use the <a href="{% url 'event-queue' event.pk %}">send queue</a>){% endif %}
+    {{ result.did|capfirst }}: {{ result.queued }} queued{% if result.blocked and result.blocked != '0' %} · {{ result.blocked }} with no channel{% endif %}
+    — <a href="{% url 'event-messages' event.pk %}">review and send →</a>
     {% endif %}
   </div>
   {% endif %}
@@ -37,22 +39,23 @@
   </div>
   {% endif %}
 
-  {% if assisted_pending %}
+  {% comment %}Load-bearing, not decoration: nothing sends itself any more, so this is
+  what stops a queued invite being forgotten (§8.4).{% endcomment %}
+  {% if waiting.total %}
   <div class="banner muted assisted-todo">
-    💬 <strong>{{ assisted_pending }} guest{{ assisted_pending|pluralize }} still need{{ assisted_pending|pluralize:"s," }} a WhatsApp / Messenger share.</strong>
-    Email invites send themselves; these you tap out one at a time.
-    <a class="qlink" href="{% url 'event-queue' event.pk %}?kind=invite">Open send queue →</a>
+    📮 <strong>{{ waiting.total }} message{{ waiting.total|pluralize }} waiting to send.</strong>
+    {% if waiting.email %}{{ waiting.email }} email{{ waiting.email|pluralize }}{% endif %}{% if waiting.email and waiting.manual %} · {% endif %}{% if waiting.manual %}{{ waiting.manual }} to send by hand{% endif %}{% if waiting.blocked %} · <span class="warn">{{ waiting.blocked }} with no channel</span>{% endif %}.
+    <a class="qlink" href="{% url 'event-messages' event.pk %}">Open messages →</a>
   </div>
   {% endif %}
 
   {% if reminder_due %}
   <div class="banner muted reminder">
-    ⏰ <strong>{{ event.title }} is nearly here.</strong> Send a day-before reminder to everyone Going / Maybe?
+    ⏰ <strong>{{ event.title }} is nearly here.</strong> Queue a day-before reminder for everyone Going / Maybe?
     <form method="post" action="{% url 'event-send' event.pk %}">
       {% csrf_token %}<input type="hidden" name="action" value="reminder">
-      <button class="save">Send reminder</button>
+      <button class="save">Queue reminder</button>
     </form>
-    <a class="qlink" href="{% url 'event-queue' event.pk %}?kind=reminder">+ assisted queue →</a>
   </div>
   {% endif %}
 

@@ -1,0 +1,7 @@
+{% comment %}One POST button for a per-row outbox action. `next` carries the current
+URL so the action lands back where it was pressed — the list or the walkthrough.{% endcomment %}
+<form method="post" action="{% url 'message-action' m.pk %}" class="mr-form">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <button class="{% if primary %}save{% else %}btn{% endif %}" name="action" value="{{ action }}">{{ label }}</button>
+</form>

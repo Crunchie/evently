@@ -21,42 +21,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- Send queue (§6) --------------------------------------------------- //
-  const sharedForm = document.getElementById("shared-form");
-
-  // WhatsApp deep link: let it open in the new tab, then optimistically mark
-  // this copy as shared (the guest's link click is the real signal).
-  const waBtn = document.getElementById("wa-btn");
-  if (waBtn && sharedForm) {
-    waBtn.addEventListener("click", () => {
-      setTimeout(() => sharedForm.submit(), 300);
-    });
-  }
-
-  // Messenger: the OS share sheet via navigator.share; desktop browsers
-  // without it degrade to copy-for-messenger (§7).
-  const shareBtn = document.getElementById("share-btn");
-  if (shareBtn && sharedForm) {
-    if (!navigator.share) shareBtn.textContent = "Copy for Messenger";
-    shareBtn.addEventListener("click", async () => {
-      const { text, url } = shareBtn.dataset;
+  // --- Manual sends (§6) -------------------------------------------------- //
+  // Sharing NEVER marks a message sent. Opening a share sheet is not evidence a
+  // message was sent — the organizer presses "Sent it" themselves (§7.3). These
+  // handlers only hand the text to WhatsApp / the OS share sheet / the clipboard.
+  //
+  // Both the walkthrough (#share-btn / #copy-btn, one card) and the Messages list
+  // (.share-btn / .copy-btn, every row) use these, hence id-or-class.
+  document.querySelectorAll("#share-btn, .share-btn").forEach((btn) => {
+    if (!navigator.share) btn.textContent = "Copy for Messenger";
+    btn.addEventListener("click", async () => {
+      const { text, url } = btn.dataset;
       try {
         if (navigator.share) await navigator.share({ text, url });
         else await navigator.clipboard.writeText(text + "\n" + url);
-        sharedForm.submit();
       } catch (err) {
-        /* share sheet dismissed — stay put */
+        /* share sheet dismissed — nothing to undo, nothing was recorded */
       }
     });
-  }
+  });
 
-  const copyBtn = document.getElementById("copy-btn");
-  if (copyBtn) {
-    copyBtn.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(copyBtn.dataset.text);
-      copyBtn.textContent = "Copied ✓";
+  document.querySelectorAll("#copy-btn, .copy-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(btn.dataset.text);
+      const original = btn.textContent;
+      btn.textContent = "Copied ✓";
+      setTimeout(() => (btn.textContent = original), 2000);
     });
-  }
+  });
 
   // --- Add-guests picker: whole-household selection ---------------------- //
   // Ticking a household covers every member with the one shared link, so its

@@ -1,45 +1,38 @@
 {% extends "core/org_base.html" %}
-{% block title %}Send & notify — {{ event.title }}{% endblock %}
+{% block title %}Queue messages — {{ event.title }}{% endblock %}
 {% block bodyclass %}dash{% endblock %}
 {% block content %}
 <main class="wrap wide">
 
   <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a></p>
-  <h1>Send &amp; notify <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span></h1>
+  <h1>Queue messages <span class="badge st-{{ event.status }}">{{ event.get_status_display }}</span></h1>
   <p class="meta">{{ event.title }} · {{ event.starts_at|date:"D, j M Y · g:i A" }}</p>
+
+  {% comment %}Every button here queues and stops. Nothing on this page sends — that
+  happens once, deliberately, on the Messages screen (§2.3).{% endcomment %}
+  <div class="banner muted">
+    Everything here goes into <a href="{% url 'event-messages' event.pk %}">Messages</a> as
+    pending. You read them there, then send.
+  </div>
 
   <section class="card">
     <h2>✉️ Invites</h2>
-    <p class="sub">{{ targets.pending_with_email|length }} by email
-      · {{ targets.pending_assisted|length }} by Messenger / WhatsApp (send queue)
-      {% if targets.pending_no_channel %}· <span class="warn">⚠ {{ targets.pending_no_channel|length }} with no channel:
-        {% for inv in targets.pending_no_channel %}{{ inv.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
-        — add one in the admin, or copy their link from the dashboard</span>{% endif %}</p>
-    <div class="actions">
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invites">
-        <button class="save" {% if not targets.pending_with_email %}disabled{% endif %}>
-          Send {{ targets.pending_with_email|length }} email invite{{ targets.pending_with_email|length|pluralize }}</button>
-      </form>
-      {% if targets.pending_assisted %}
-      <a class="btn qlink" href="{% url 'event-queue' event.pk %}?kind=invite">
-        Open send queue ({{ targets.pending_assisted|length }}) →</a>
-      {% endif %}
-    </div>
+    <p class="sub">{{ targets.invites|length }} guest{{ targets.invites|length|pluralize }} not yet queued for an invite:
+      {% for inv in targets.invites %}{{ inv.display_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invites">
+      <button class="save" {% if not targets.invites %}disabled{% endif %}>
+        Queue {{ targets.invites|length }} invite{{ targets.invites|length|pluralize }}</button>
+    </form>
   </section>
 
   <section class="card">
     <h2>🔔 Nudge non-responders</h2>
-    <p class="sub">{{ targets.non_responders|length }} by email
-      {% if targets.non_responders_assisted %}· {{ targets.non_responders_assisted|length }} via send queue{% endif %}:
+    <p class="sub">{{ targets.non_responders|length }} who haven't replied:
       {% for inv in targets.non_responders %}{{ inv.display_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
-    <div class="actions">
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="nudge">
-        <button class="save" {% if not targets.non_responders %}disabled{% endif %}>Nudge {{ targets.non_responders|length }}</button>
-      </form>
-      {% if targets.non_responders_assisted %}
-      <a class="btn qlink" href="{% url 'event-queue' event.pk %}?kind=nudge">Queue ({{ targets.non_responders_assisted|length }}) →</a>
-      {% endif %}
-    </div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="nudge">
+      <button class="save" {% if not targets.non_responders %}disabled{% endif %}>
+        Queue {{ targets.non_responders|length }} nudge{{ targets.non_responders|length|pluralize }}</button>
+    </form>
   </section>
 
   {% if targets.retryable %}
@@ -47,49 +40,38 @@
     <h2>↺ Retry bounced / failed</h2>
     <p class="sub">{% for inv in targets.retryable %}{{ inv.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="retry">
-      <button class="save">Retry {{ targets.retryable|length }}</button>
+      <button class="save">Re-queue {{ targets.retryable|length }}</button>
     </form>
   </section>
   {% endif %}
 
   <section class="card">
     <h2>⏰ Day-before reminder</h2>
-    <p class="sub">Reminds everyone who said Going or Maybe — {{ targets.reminder_email|length }} by email{% if targets.reminder_assisted %}, {{ targets.reminder_assisted|length }} via send queue{% endif %}.</p>
-    <div class="actions">
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reminder">
-        <button class="save" {% if not targets.reminder_email %}disabled{% endif %}>Send reminder to {{ targets.reminder_email|length }}</button>
-      </form>
-      {% if targets.reminder_assisted %}
-      <a class="btn qlink" href="{% url 'event-queue' event.pk %}?kind=reminder">Queue ({{ targets.reminder_assisted|length }}) →</a>
-      {% endif %}
-    </div>
+    <p class="sub">Reminds everyone who said Going or Maybe — {{ targets.reminder|length }} guest{{ targets.reminder|length|pluralize }}.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reminder">
+      <button class="save" {% if not targets.reminder %}disabled{% endif %}>
+        Queue {{ targets.reminder|length }} reminder{{ targets.reminder|length|pluralize }}</button>
+    </form>
   </section>
 
   <section class="card">
     <h2>📣 Send an update</h2>
-    <p class="sub">Details changed? Notify all {{ targets.notified|length }} already-invited guests{% if targets.notified_assisted %} ({{ targets.notified_assisted|length }} of them via send queue){% endif %}.</p>
-    <div class="actions">
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update">
-        <button class="save" {% if not targets.notified %}disabled{% endif %}>Send update to {{ targets.notified|length }}</button>
-      </form>
-      {% if targets.notified_assisted %}
-      <a class="btn qlink" href="{% url 'event-queue' event.pk %}?kind=update">Queue ({{ targets.notified_assisted|length }}) →</a>
-      {% endif %}
-    </div>
+    <p class="sub">Details changed? Queue an update for all {{ targets.notified|length }} already-invited guests.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="update">
+      <button class="save" {% if not targets.notified %}disabled{% endif %}>
+        Queue {{ targets.notified|length }} update{{ targets.notified|length|pluralize }}</button>
+    </form>
   </section>
 
   <section class="card danger">
     <h2>🛑 Cancel event</h2>
-    <p class="sub">Sets the event to cancelled, freezes RSVPs, and sends a cancellation
-      notice to all {{ targets.notified|length }} invited guests. No undo.</p>
-    <form method="post" data-confirm="Cancel this event and notify everyone?">
+    <p class="sub">Sets the event to cancelled, freezes RSVPs, <strong>drops anything still
+      queued</strong> — an invite must never go out after a cancellation — and queues a
+      cancellation notice for all {{ targets.notified|length }} invited guests. No undo.</p>
+    <form method="post" data-confirm="Cancel this event and queue a notice for everyone?">
       {% csrf_token %}<input type="hidden" name="action" value="cancel">
-      <button class="save" {% if event.status == "cancelled" %}disabled{% endif %}>Cancel event + notify</button>
+      <button class="save" {% if event.status == "cancelled" %}disabled{% endif %}>Cancel event + queue notice</button>
     </form>
-    {% if targets.notified_assisted %}
-    <p class="sub">You'll be taken straight to the send queue afterwards to tell the
-      {{ targets.notified_assisted|length }} Messenger / WhatsApp guest{{ targets.notified_assisted|length|pluralize }} too.</p>
-    {% endif %}
   </section>
 
 </main>

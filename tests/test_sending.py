@@ -1,5 +1,9 @@
-"""Phase 4: synchronous email dispatch via the send/notify actions (§2.3/§2.4/§9).
-The Resend call is patched out — outcomes and state transitions are what's under test."""
+"""The outbox: queueing messages, then sending the email ones (§2.3/§2.4/§9).
+
+The Resend call is patched out — what's under test is that **queueing and sending are
+separate**, that a queued row says what it will say before it goes, and that state moves
+only when something actually left.
+"""
 
 from datetime import timedelta
 
@@ -11,6 +15,7 @@ from core import channels
 from core.models import Contact, ContactChannel, Delivery, Event, Household, Invitation
 
 State = Invitation.State
+Status = Delivery.Status
 
 
 @pytest.fixture
@@ -51,50 +56,6 @@ def contact_with_email(name, email):
     return contact
 
 
-def send_url(event):
-    return reverse("event-send", args=[event.pk])
-
-
-def test_send_invites_flow(staff_client, event, fake_send, settings):
-    settings.EMAIL_REPLY_TO = "hosts@example.com"  # drives the List-Unsubscribe mailto
-    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex Doe", "a@x.com"))
-    no_email = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Tom"))
-
-    # review screen shows the breakdown
-    content = staff_client.get(send_url(event)).content.decode()
-    assert "Send 1 email invite" in content and "Tom" in content
-
-    resp = staff_client.post(send_url(event), {"action": "invites"})
-    assert resp.status_code == 302
-    assert "did=invites" in resp["Location"] and "sent=1" in resp["Location"]
-
-    inv.refresh_from_db()
-    event.refresh_from_db()
-    no_email.refresh_from_db()
-    assert inv.state == State.SENT
-    assert event.status == Event.Status.ACTIVE  # first send flips draft → active
-    assert no_email.state == State.PENDING  # skipped, not silently "sent"
-
-    delivery = inv.deliveries.get()
-    assert delivery.status == Delivery.Status.SENT
-    assert delivery.provider_message_id == "re_0"
-    assert delivery.address_used == "a@x.com"
-
-    message = fake_send[0][0]
-    assert message["to"] == ["a@x.com"]
-    assert "You're invited" in message["subject"] and "Summer BBQ" in message["subject"]
-    assert inv.rsvp_path in message["text"]
-    # List-Unsubscribe present for deliverability (mailto → reply-to inbox).
-    assert (
-        message["headers"]["List-Unsubscribe"] == "<mailto:hosts@example.com?subject=unsubscribe>"
-    )
-
-    # idempotent: nothing pending anymore → second send is a no-op
-    resp = staff_client.post(send_url(event), {"action": "invites"})
-    assert "sent=0" in resp["Location"]
-    assert inv.deliveries.count() == 1
-
-
 def _whatsapp_contact(name, phone):
     contact = Contact.objects.create(name=name)
     ContactChannel.objects.create(
@@ -103,107 +64,227 @@ def _whatsapp_contact(name, phone):
     return contact
 
 
-def test_send_invites_hands_off_to_assisted_queue(staff_client, event, fake_send):
-    """B: after the email half goes, land straight in the assisted queue for the rest
-    rather than back on the dashboard where the queue is a link to rediscover."""
-    Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
-    Invitation.objects.create(event=event, contact=_whatsapp_contact("Dan", "+64211234567"))
+def send_url(event):
+    return reverse("event-send", args=[event.pk])
+
+
+def messages_url(event):
+    return reverse("event-messages", args=[event.pk])
+
+
+def send_pending_url(event):
+    return reverse("event-send-pending", args=[event.pk])
+
+
+# --------------------------------------------------------------------------- #
+#  Queueing sends nothing
+# --------------------------------------------------------------------------- #
+def test_queueing_invites_sends_nothing(staff_client, event, fake_send):
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
 
     resp = staff_client.post(send_url(event), {"action": "invites"})
-    loc = resp["Location"]
-    assert "/queue/" in loc and "kind=invite" in loc and "from_send=1" in loc and "sent=1" in loc
+    assert resp.status_code == 302
+    assert "/messages/" in resp["Location"] and "queued=1" in resp["Location"]
 
-    page = staff_client.get(loc).content.decode()
-    assert "sent by email" in page and "Dan" in page  # hand-off banner + assisted card
-
-
-def test_cancel_hands_off_to_assisted_queue(staff_client, event, fake_send):
-    """C: cancellation must reach assisted guests too — route into their queue instead
-    of leaving it as an easily-missed footnote."""
-    event.status = Event.Status.ACTIVE
-    event.save()
-    inv = Invitation.objects.create(event=event, contact=_whatsapp_contact("Dan", "+64211234567"))
-    inv.state = State.SHARED  # already reached once → counts as "notified"
-    inv.save()
-
-    resp = staff_client.post(send_url(event), {"action": "cancel"})
-    event.refresh_from_db()
-    assert event.status == Event.Status.CANCELLED
-    loc = resp["Location"]
-    assert "/queue/" in loc and "kind=cancellation" in loc
-    assert "Dan" in staff_client.get(loc).content.decode()
-
-
-def test_mixed_household_keeps_assisted_share_after_email(staff_client, event, fake_send):
-    """Regression: emailing a mixed-route household advances the envelope to SENT, but
-    its WhatsApp member still owes a share — it must stay in the invite queue, not vanish."""
-    hh = Household.objects.create(name="Mixed")
-    jane = contact_with_email("Jane", "jane@x.com")
-    jane.household = hh
-    jane.save()
-    mark = _whatsapp_contact("Mark", "+64222222222")
-    mark.household = hh
-    mark.save()
-    inv = Invitation.objects.create(event=event, household=hh)
-
-    loc = staff_client.post(send_url(event), {"action": "invites"})["Location"]
+    assert not fake_send  # the whole point: nothing left the building
     inv.refresh_from_db()
-    assert inv.state == State.SENT  # emailed Jane
-    assert "kind=invite" in loc  # ...but handed off to the queue for Mark
-    assert "wa.me/64222222222" in staff_client.get(loc).content.decode()
+    assert inv.state == State.QUEUED
+    delivery = inv.deliveries.get()
+    assert delivery.status == Status.PENDING
+    assert delivery.message_kind == "invite"
+    assert delivery.address_used == "a@x.com"
+    assert delivery.sent_at is None
 
-    # And the dashboard keeps nagging until Mark's share is done.
-    dash = staff_client.get(reverse("event-dashboard", args=[event.pk])).content.decode()
-    assert "still need" in dash
 
-
-def test_invite_message_carries_event_details(event):
-    from core.messaging import build_message
-
+def test_queued_row_carries_the_message_it_will_send(staff_client, event):
     event.location_text = "42 Maple Avenue"
     event.description = "Bring a plate to share!"
     event.save()
     inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
 
-    msg = build_message("invite", inv, "https://x.test/i/abc")
-    # when, where and the description all appear so the email stands on its own
-    assert "Summer BBQ" in msg["text"]
-    assert "42 Maple Avenue" in msg["text"] and "42 Maple Avenue" in msg["html"]
-    assert "Bring a plate to share!" in msg["text"] and "Bring a plate to share!" in msg["html"]
+    staff_client.post(send_url(event), {"action": "invites"})
+    delivery = inv.deliveries.get()
+    assert "You're invited" in delivery.subject and "Summer BBQ" in delivery.subject
+    assert "42 Maple Avenue" in delivery.body
+    assert "Bring a plate to share!" in delivery.body
+    assert inv.rsvp_path in delivery.body  # the link is the point of the message
+
+    # ...and the screen shows it, so "what is about to go out" is answerable.
+    page = staff_client.get(messages_url(event)).content.decode()
+    assert "Pending email — 1" in page and "42 Maple Avenue" in page
+
+
+def test_queueing_twice_does_not_double_queue(staff_client, event):
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+
+    staff_client.post(send_url(event), {"action": "invites"})
+    resp = staff_client.post(send_url(event), {"action": "invites"})
+
+    assert inv.deliveries.count() == 1
+    assert "already_queued=1" in resp["Location"] or "queued=0" in resp["Location"]
+
+
+def test_guest_with_no_channel_gets_a_blocked_row(staff_client, event):
+    """Not silently skipped: the outbox is meant to be the complete list."""
+    inv = Invitation.objects.create(event=event, contact=Contact.objects.create(name="Tom"))
+
+    staff_client.post(send_url(event), {"action": "invites"})
+    delivery = inv.deliveries.get()
+    assert delivery.status == Status.BLOCKED
+    assert delivery.channel_id is None
+
+    page = staff_client.get(messages_url(event)).content.decode()
+    assert "Can't send — 1" in page and "Tom" in page
+
+
+def test_queueing_flips_a_draft_active(staff_client, event):
+    """can_rsvp needs ACTIVE — a draft whose invites went out would hand every guest a
+    link they can't answer."""
+    Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    event.refresh_from_db()
+    assert event.status == Event.Status.ACTIVE
+
+
+# --------------------------------------------------------------------------- #
+#  Sending the pending email
+# --------------------------------------------------------------------------- #
+def test_send_pending_emails(staff_client, event, fake_send, settings):
+    settings.EMAIL_REPLY_TO = "hosts@example.com"  # drives the List-Unsubscribe mailto
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+
+    resp = staff_client.post(send_pending_url(event))
+    assert "did=sent" in resp["Location"] and "sent=1" in resp["Location"]
+
+    inv.refresh_from_db()
+    assert inv.state == State.SENT
+    delivery = inv.deliveries.get()
+    assert delivery.status == Status.SENT
+    assert delivery.provider_message_id == "re_0"
+    assert delivery.sent_at is not None
+    assert delivery.sent_by.username == "sam"
+
+    message = fake_send[0][0]
+    assert message["to"] == ["a@x.com"]
+    assert inv.rsvp_path in message["text"]
+    assert (
+        message["headers"]["List-Unsubscribe"] == "<mailto:hosts@example.com?subject=unsubscribe>"
+    )
+
+    # Sent rows leave the pending section and appear in the history.
+    page = staff_client.get(messages_url(event)).content.decode()
+    assert "Pending email" not in page
+    assert "All messages" in page and "Alex" in page
+
+    # Nothing pending → second press is a no-op.
+    resp = staff_client.post(send_pending_url(event))
+    assert "sent=0" in resp["Location"]
+    assert inv.deliveries.count() == 1
+
+
+def test_send_pending_sends_every_kind_at_once(staff_client, event, fake_send):
+    """No kind filter on the button: it sends what the list shows (§7.2)."""
+    a = Invitation.objects.create(event=event, contact=contact_with_email("A", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_pending_url(event))
+    fake_send.clear()
+
+    # Now queue a nudge for A *and* an invite for a newcomer, then send once.
+    Invitation.objects.create(event=event, contact=contact_with_email("B", "b@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_url(event), {"action": "nudge"})
+
+    resp = staff_client.post(send_pending_url(event))
+    assert "sent=2" in resp["Location"]
+    kinds = {d.message_kind for d in Delivery.objects.filter(status=Status.SENT)}
+    assert kinds == {"invite", "nudge"}
+    assert a.deliveries.filter(message_kind="nudge", status=Status.SENT).exists()
+
+
+def test_cancelling_a_row_holds_it_back(staff_client, event, fake_send):
+    """ "Don't send" is how you hold one message back — there are no tick-boxes."""
+    keep = Invitation.objects.create(event=event, contact=contact_with_email("Keep", "k@x.com"))
+    drop = Invitation.objects.create(event=event, contact=contact_with_email("Drop", "d@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+
+    staff_client.post(
+        reverse("message-action", args=[drop.deliveries.get().pk]), {"action": "cancel"}
+    )
+    resp = staff_client.post(send_pending_url(event))
+
+    assert "sent=1" in resp["Location"]
+    assert keep.deliveries.get().status == Status.SENT
+    assert drop.deliveries.get().status == Status.CANCELLED
+    assert [m["to"] for m in fake_send[0]] == [["k@x.com"]]
 
 
 def test_provider_error_marks_failed_and_keeps_state(staff_client, event, monkeypatch):
-    def _boom(messages):
-        raise RuntimeError("resend down")
-
-    monkeypatch.setattr(channels, "send_email_batch", _boom)
+    monkeypatch.setattr(
+        channels, "send_email_batch", lambda messages: (_ for _ in ()).throw(RuntimeError("down"))
+    )
     inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
 
-    resp = staff_client.post(send_url(event), {"action": "invites"})
+    resp = staff_client.post(send_pending_url(event))
     assert "failed=1" in resp["Location"]
 
     inv.refresh_from_db()
     delivery = inv.deliveries.get()
-    assert delivery.status == Delivery.Status.FAILED and "resend down" in delivery.error
-    assert inv.state == State.PENDING  # nothing went out
-    # ...and it now shows up as retryable
-    assert "Retry" in staff_client.get(send_url(event)).content.decode()
+    assert delivery.status == Status.FAILED and "down" in delivery.error
+    assert inv.state == State.QUEUED  # queued, never sent
+
+    # It surfaces as needing attention, with a retry.
+    page = staff_client.get(messages_url(event)).content.decode()
+    assert "Needs attention" in page and "Retry" in page
+
+
+def test_retry_puts_a_failed_row_back_in_the_queue(staff_client, event, fake_send, monkeypatch):
+    monkeypatch.setattr(
+        channels, "send_email_batch", lambda messages: (_ for _ in ()).throw(RuntimeError("down"))
+    )
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_pending_url(event))
+
+    delivery = inv.deliveries.get()
+    staff_client.post(reverse("message-action", args=[delivery.pk]), {"action": "retry"})
+    delivery.refresh_from_db()
+    assert delivery.status == Status.PENDING and delivery.error == ""
+
+    # A retry re-queues rather than re-sending, so the address can be fixed in between.
+    monkeypatch.setattr(channels, "send_email_batch", lambda messages: ["re_0"])
+    staff_client.post(send_pending_url(event))
+    delivery.refresh_from_db()
+    assert delivery.status == Status.SENT
 
 
 def test_short_provider_response_fails_the_unmatched_tail(staff_client, event, monkeypatch):
-    """If Resend returns fewer ids than messages, the tail must be FAILED, not
-    left QUEUED forever and missing from the ✓/✗ counts."""
+    """If Resend returns fewer ids than messages, the tail must be FAILED, not left
+    pending forever and missing from the ✓/✗ counts."""
     monkeypatch.setattr(channels, "send_email_batch", lambda messages: ["re_0"])  # one id short
     for n, email in enumerate(("a@x.com", "b@x.com")):
         Invitation.objects.create(event=event, contact=contact_with_email(f"Guest {n}", email))
+    staff_client.post(send_url(event), {"action": "invites"})
 
-    resp = staff_client.post(send_url(event), {"action": "invites"})
+    resp = staff_client.post(send_pending_url(event))
     assert "sent=1" in resp["Location"] and "failed=1" in resp["Location"]
-    assert Delivery.objects.filter(status=Delivery.Status.FAILED).count() == 1
-    assert not Delivery.objects.filter(status=Delivery.Status.PENDING).exists()
+    assert Delivery.objects.filter(status=Status.FAILED).count() == 1
+    assert not Delivery.objects.filter(status=Status.PENDING).exists()
 
 
-def test_household_sends_same_link_to_each_parent(staff_client, event, fake_send):
+def test_batches_over_the_provider_limit(staff_client, event, fake_send, monkeypatch):
+    monkeypatch.setattr(channels, "RESEND_BATCH_LIMIT", 2)
+    for n in range(5):
+        Invitation.objects.create(event=event, contact=contact_with_email(f"G{n}", f"g{n}@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+
+    resp = staff_client.post(send_pending_url(event))
+    assert "sent=5" in resp["Location"]
+    assert [len(b) for b in fake_send] == [2, 2, 1]
+
+
+def test_household_queues_same_link_to_each_parent(staff_client, event, fake_send):
     hh = Household.objects.create(name="The Hendersons")
     jane = contact_with_email("Jane", "jane@x.com")
     mark = contact_with_email("Mark", "mark@x.com")
@@ -216,46 +297,113 @@ def test_household_sends_same_link_to_each_parent(staff_client, event, fake_send
     staff_client.post(send_url(event), {"action": "invites"})
 
     assert inv.deliveries.count() == 2  # deduped by address
-    addresses = {d.address_used for d in inv.deliveries.all()}
-    assert addresses == {"jane@x.com", "mark@x.com"}
-    # both copies carry the same envelope link
-    assert all(inv.rsvp_path in m["text"] for m in fake_send[0])
+    assert {d.address_used for d in inv.deliveries.all()} == {"jane@x.com", "mark@x.com"}
+    assert all(inv.rsvp_path in d.body for d in inv.deliveries.all())
 
 
 def test_nudge_targets_only_nonresponders(staff_client, event, fake_send):
     quiet = Invitation.objects.create(event=event, contact=contact_with_email("Quiet", "q@x.com"))
     replied = Invitation.objects.create(event=event, contact=contact_with_email("Fast", "f@x.com"))
     staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_pending_url(event))
 
-    # one guest responds through their link
     attendee = replied.attendees.get()
     staff_client.post(replied.rsvp_path, {f"status_{attendee.pk}": "going"})
 
-    fake_send.clear()
-    resp = staff_client.post(send_url(event), {"action": "nudge"})
-    assert "sent=1" in resp["Location"]
-    assert fake_send[0][0]["to"] == ["q@x.com"]
-    assert "nudge" in fake_send[0][0]["subject"].lower() or "hoping" in fake_send[0][0]["subject"]
+    staff_client.post(send_url(event), {"action": "nudge"})
+    nudges = Delivery.objects.filter(message_kind="nudge")
+    assert [d.invitation_id for d in nudges] == [quiet.pk]
     quiet.refresh_from_db()
-    assert quiet.state == State.SENT  # nudge doesn't fake progress
+    assert quiet.state == State.SENT  # queueing a nudge doesn't fake progress
 
 
-def test_cancel_action_cancels_and_notifies(staff_client, event, fake_send):
+def test_reminder_targets_going_and_maybe(staff_client, event, fake_send):
+    going = Invitation.objects.create(event=event, contact=contact_with_email("Go", "g@x.com"))
+    quiet = Invitation.objects.create(event=event, contact=contact_with_email("Quiet", "q@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_pending_url(event))
+    staff_client.post(going.rsvp_path, {f"status_{going.attendees.get().pk}": "going"})
+
+    staff_client.post(send_url(event), {"action": "reminder"})
+    reminders = Delivery.objects.filter(message_kind="reminder")
+    assert [d.invitation_id for d in reminders] == [going.pk]
+    assert not quiet.deliveries.filter(message_kind="reminder").exists()
+
+
+# --------------------------------------------------------------------------- #
+#  Cancellation
+# --------------------------------------------------------------------------- #
+def test_cancel_drops_queued_messages_before_queueing_the_notice(staff_client, event, fake_send):
+    """The worst failure this app could have: an invite going out after a cancellation."""
     inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
     staff_client.post(send_url(event), {"action": "invites"})
+    staff_client.post(send_pending_url(event))
+    # A second invite queued but not yet sent — this is the dangerous one.
+    late = Invitation.objects.create(event=event, contact=contact_with_email("Late", "l@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+    assert late.deliveries.get().status == Status.PENDING
 
-    fake_send.clear()
-    resp = staff_client.post(send_url(event), {"action": "cancel"})
-    assert "did=cancel" in resp["Location"] and "sent=1" in resp["Location"]
+    staff_client.post(send_url(event), {"action": "cancel"})
 
     event.refresh_from_db()
     assert event.status == Event.Status.CANCELLED
-    assert "Cancelled" in fake_send[0][0]["subject"]
+    assert late.deliveries.get(message_kind="invite").status == Status.CANCELLED
+    assert inv.deliveries.filter(message_kind="cancellation", status=Status.PENDING).exists()
 
-    # guest link now shows the cancelled state and refuses RSVPs
+    fake_send.clear()
+    staff_client.post(send_pending_url(event))
+    assert all("Cancelled" in m["subject"] for m in fake_send[0])
+
+    # Guest link now shows the cancelled state and refuses RSVPs.
     attendee = inv.attendees.get()
     assert staff_client.post(inv.rsvp_path, {f"status_{attendee.pk}": "going"}).status_code == 403
 
 
+def test_uninvite_drops_queued_messages(staff_client, event):
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+
+    staff_client.post(reverse("invitation-action", args=[inv.pk]), {"action": "revoke"})
+    assert inv.deliveries.get().status == Status.CANCELLED
+
+
+# --------------------------------------------------------------------------- #
+#  Message content
+# --------------------------------------------------------------------------- #
+def test_invite_message_carries_event_details(event):
+    from core.messaging import build_message
+
+    event.location_text = "42 Maple Avenue"
+    event.description = "Bring a plate to share!"
+    event.save()
+    inv = Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+
+    msg = build_message("invite", inv, "https://x.test/i/abc")
+    assert "Summer BBQ" in msg["text"]
+    assert "42 Maple Avenue" in msg["text"] and "42 Maple Avenue" in msg["html"]
+    assert "Bring a plate to share!" in msg["text"] and "Bring a plate to share!" in msg["html"]
+    # The raw link never appears as text beside the button — the button carries it.
+    assert 'href="https://x.test/i/abc"' in msg["html"]
+    assert ">https://x.test/i/abc<" not in msg["html"]
+
+
+def test_unedited_row_picks_up_an_event_change_at_send(staff_client, event, fake_send):
+    """Queued, then the venue changes: the message that goes out is the current one, with
+    no second message queued (§12.3)."""
+    Invitation.objects.create(event=event, contact=contact_with_email("Alex", "a@x.com"))
+    staff_client.post(send_url(event), {"action": "invites"})
+
+    event.location_text = "The New Hall"
+    event.save()
+    staff_client.post(send_pending_url(event))
+
+    assert "The New Hall" in fake_send[0][0]["text"]
+    assert Delivery.objects.count() == 1  # no extra "update" appeared
+
+
 def test_send_page_requires_staff(client, event):
     assert client.get(send_url(event)).status_code == 302  # to admin login
+
+
+def test_messages_page_requires_staff(client, event):
+    assert client.get(messages_url(event)).status_code == 302

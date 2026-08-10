@@ -551,3 +551,47 @@ body.dash .card .sub.tight { margin-top: .1rem; }
 .home-past li { padding: .35rem 0; font-size: .92rem; display: flex; align-items: baseline; gap: .5rem; }
 .home-past a { color: var(--ink); font-weight: 600; }
 .home-past a:hover { color: var(--coral); }
+
+/* ---------- Messages / outbox (§2.3) ---------- */
+.msg-summary { display: flex; flex-wrap: wrap; gap: 1.4rem; align-items: baseline; }
+.ms-stat { font-size: .9rem; color: var(--ink); }
+.ms-stat strong { font-size: 1.35rem; display: inline-block; margin-right: .25rem; }
+.ms-stat.muted { color: var(--muted); }
+.ms-stat.warn { color: var(--maybe); }
+
+.msg-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.msg-head h2 { margin: 0; }
+.msg-head .save, .msg-head .btn { width: auto; margin: 0; }
+
+.msg-list { list-style: none; padding: 0; margin: .8rem 0 0; }
+.msg-row { border-top: 1px solid var(--line); padding: .1rem 0; }
+.msg-row:first-child { border-top: none; }
+.msg-row.deferred { opacity: .6; }
+.msg-row summary, .mr-flat {
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
+  padding: .6rem .1rem; font-size: .92rem; cursor: pointer;
+}
+.mr-flat { cursor: default; }
+.msg-row summary::marker { color: var(--muted); }
+.mr-who { font-weight: 700; }
+.mr-addr, .mr-when, .mr-by, .mr-err { color: var(--muted); font-size: .85rem; }
+.mr-err { flex-basis: 100%; }
+.mr-status { width: 1rem; text-align: center; color: var(--muted); }
+.mr-when { min-width: 8.5rem; }
+.mr-body { padding: .2rem .1rem .9rem; }
+.mr-subject { font-size: .9rem; margin-bottom: .5rem; }
+.mr-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: .7rem; margin-left: auto; }
+.mr-actions .btn, .mr-actions .save { width: auto; margin: 0; padding: .4rem .8rem; font-size: .85rem; }
+.mr-form { display: inline; }
+.badge.edited { background: #fef3c7; color: #92400e; }
+.badge.warn-badge { background: #ffedd5; color: #9a3412; }
+.badge.muted-badge { background: #f1f5f9; color: #64748b; }
+.msg-row.st-cancelled { opacity: .55; }
+.msg-filters { display: flex; gap: .6rem; align-items: center; margin: .6rem 0 0; flex-wrap: wrap; }
+.msg-filters select { padding: .35rem .5rem; border-radius: 8px; border: 1px solid var(--line); font: inherit; }
+.msg-list.history { max-height: 26rem; overflow-y: auto; }
+
+.q-mark { margin-top: 1rem; }
+.q-mark .save { width: 100%; }
+.q-skip { display: flex; gap: 1rem; justify-content: center; margin-top: .8rem; }
+.center { text-align: center; }

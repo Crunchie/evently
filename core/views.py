@@ -20,18 +20,24 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .channels import (
+    ASSISTED_KINDS,
     ENTRY_KINDS,
     assisted_channels,
-    dispatch_email,
+    cancel_pending,
+    cancel_pending_for,
     email_channels,
+    enqueue,
+    mark_sent,
+    rsvp_url,
     send_feedback_email,
+    send_pending_emails,
     send_targets,
-    shared_channel_pairs,
     validate_channel_value,
     wa_link,
 )
 from .ics import event_ics, google_calendar_url, google_maps_embed_url
-from .messaging import share_payload
+from .messaging import render as render_message
+from .messaging import share_payload_from
 from .models import (
     Contact,
     ContactChannel,
@@ -497,24 +503,20 @@ def event_dashboard(request, pk):
         inv.route_assisted = bool(assisted_channels(inv))
         inv.has_bounce = inv.id in bounced_inv_ids
 
-    # Outstanding assisted *invite* shares (§6): the standing to-do the send queue
-    # exists for. Surfaced as a dashboard prompt so "when do I do this?" answers itself
-    # instead of hiding in the send screen's small print. Matches send_targets'
-    # pending_assisted (PENDING/QUEUED/SHARED envelopes with an un-shared assisted copy).
-    shared_pairs = shared_channel_pairs(event)
-    _pending_states = (
-        Invitation.State.PENDING,
-        Invitation.State.QUEUED,
-        Invitation.State.SENT,  # mixed household: emailed one member, assisted copy still owed
-        Invitation.State.SHARED,
-    )
-    assisted_pending = sum(
-        1
-        for inv in invitations
-        if inv.state in _pending_states
-        for ch in assisted_channels(inv)
-        if (inv.pk, ch.pk) not in shared_pairs
-    )
+    # The standing to-do (§8.4): what's sitting in the outbox. Nothing sends itself any
+    # more, so this prompt is the thing that stops queued invites being forgotten — it's
+    # load-bearing, not decoration. One query, split by what each half needs from you.
+    outstanding = Delivery.objects.filter(invitation__event=event, status__in=Delivery.OUTSTANDING)
+    waiting = {
+        "email": outstanding.filter(
+            status=Delivery.Status.PENDING, channel_kind=ContactChannel.Kind.EMAIL
+        ).count(),
+        "manual": outstanding.filter(
+            status=Delivery.Status.PENDING, channel_kind__in=ASSISTED_KINDS
+        ).count(),
+        "blocked": outstanding.filter(status=Delivery.Status.BLOCKED).count(),
+    }
+    waiting["total"] = waiting["email"] + waiting["manual"] + waiting["blocked"]
 
     # Revoked envelopes stay visible in the table (greyed) but are out of every
     # count — uninvited guests aren't catered for (§2.2).
@@ -556,7 +558,7 @@ def event_dashboard(request, pk):
             "attendee__contact", "actor_user"
         )[:30],
         "reminder_due": reminder_due,
-        "assisted_pending": assisted_pending,
+        "waiting": waiting,
         "polls": _poll_display(event, None, voting_open=False),
         "result": {k: request.GET.get(k) for k in ("did", "sent", "failed", "skipped", "msg")}
         if request.GET.get("did")
@@ -565,57 +567,64 @@ def event_dashboard(request, pk):
     return render(request, "core/dashboard.html", context)
 
 
+def _activate_if_draft(event) -> None:
+    """A draft flips active the moment guests are put in the queue for it (§2.1).
+
+    This used to hang off the first successful *send*. It can't any more — queueing and
+    sending are separate now, and `can_rsvp` requires ACTIVE, so an event left in draft
+    while its invites went out would hand every guest a link they can't answer.
+    """
+    if event.status == Event.Status.DRAFT:
+        event.status = Event.Status.ACTIVE
+        event.save(update_fields=["status", "updated_at"])
+
+
+# Which audience each action queues to, and what message they get.
+SEND_ACTIONS = {
+    "invites": ("invites", "invite"),
+    "retry": ("retryable", "invite"),
+    "nudge": ("non_responders", "nudge"),
+    "update": ("notified", "update"),
+    "cancel": ("notified", "cancellation"),
+    "reminder": ("reminder", "reminder"),
+}
+
+
 @staff_member_required
 @require_http_methods(["GET", "POST"])
 def event_send(request, pk):
-    """Send review screen (§2.3) + the notify actions (§2.4). Sends are synchronous
-    (§9): the redirect carries per-guest ✓/✗ counts. When the same audience also has
-    assisted (WhatsApp/Messenger) recipients, we hand straight off to their send queue
-    rather than stranding them behind a link the organizer has to rediscover."""
+    """Queue-messages screen (§2.3/§2.4). Every action here **queues and stops** — the
+    messages then sit in the outbox until the organizer sends them from the Messages
+    screen. Nothing goes out as a side effect of pressing a button on this page."""
     event = get_object_or_404(Event, pk=pk)
     targets = send_targets(event)
 
     if request.method == "POST":
         action = request.POST.get("action", "")
+        if action not in SEND_ACTIONS:
+            return HttpResponseForbidden("Unknown action")
+        audience, message_kind = SEND_ACTIONS[action]
         base_url = request.build_absolute_uri("/").rstrip("/")
+
         if action == "invites":
-            result = dispatch_email(targets["pending_with_email"], "invite", base_url)
-            if result["sent"] and event.status == Event.Status.DRAFT:
-                event.status = Event.Status.ACTIVE  # first send flips draft → active (§2.1)
-                event.save(update_fields=["status", "updated_at"])
-        elif action == "retry":
-            result = dispatch_email(targets["retryable"], "invite", base_url)
-        elif action == "nudge":
-            result = dispatch_email(targets["non_responders"], "nudge", base_url)
-        elif action == "update":
-            result = dispatch_email(targets["notified"], "update", base_url)
+            _activate_if_draft(event)
         elif action == "cancel":
             if event.status != Event.Status.CANCELLED:
                 event.status = Event.Status.CANCELLED
                 event.save(update_fields=["status", "updated_at"])
-            result = dispatch_email(targets["notified"], "cancellation", base_url)
-        elif action == "reminder":
-            result = dispatch_email(targets["reminder_email"], "reminder", base_url)
-        else:
-            return HttpResponseForbidden("Unknown action")
-
-        # Hand off to the assisted queue when this audience has WhatsApp/Messenger
-        # recipients still to reach (§6). Cancellation especially: the assisted folks
-        # must hear too, so we route into their queue instead of leaving a footnote.
-        queue = SEND_ACTION_QUEUE.get(action)
-        if queue and targets[queue[1]]:
-            kind, _ = queue
-            _reset_skips(request, event.pk, kind)  # a fresh send starts a clean walk
-            q = reverse("event-queue", args=[event.pk])
-            return redirect(
-                f"{q}?kind={kind}&from_send=1&sent={result['sent']}&failed={result['failed']}"
+            # Clear the queue *before* queueing the notice: an invite going out after a
+            # cancellation is the worst thing this app could do (§9).
+            cancel_pending(event)
+        elif action == "retry":
+            # A retry is a re-queue, not a re-send: the row goes back in the outbox and
+            # leaves with the next batch, so a bad address can be fixed in between.
+            Delivery.objects.filter(invitation__event=event, status__in=Delivery.RETRYABLE).update(
+                status=Delivery.Status.CANCELLED, updated_at=timezone.now()
             )
 
-        dash = reverse("event-dashboard", args=[event.pk])
-        return redirect(
-            f"{dash}?did={action}&sent={result['sent']}"
-            f"&failed={result['failed']}&skipped={result['skipped']}"
-        )
+        result = enqueue(targets[audience], message_kind, base_url)
+        msgs = reverse("event-messages", args=[event.pk])
+        return redirect(f"{msgs}?{urlencode({'did': action, **result})}")
 
     return render(request, "core/send.html", {"event": event, "targets": targets})
 
@@ -664,33 +673,30 @@ def event_invite(request, pk):
             if contact.pk not in already:  # skip anyone already invited (defensive)
                 new_invites.append(Invitation.objects.create(event=event, contact=contact))
 
-        # Send the email invites now, so "add guests" actually invites them (§2.3). Only
-        # the just-added ones, and never for a cancelled event. dispatch_email skips
-        # anyone without an email route — assisted-only guests stay PENDING for the queue.
-        result = {"sent": 0, "failed": 0, "skipped": 0}
+        # Queue their invites (§2.3). Adding no longer *sends* — the messages wait in
+        # the outbox so you can see them before they go — so we land on Messages rather
+        # than the dashboard, where the send button is one tap away.
+        result = {"queued": 0, "blocked": 0, "already_queued": 0}
         if new_invites and event.status != Event.Status.CANCELLED:
-            result = dispatch_email(
-                new_invites, "invite", request.build_absolute_uri("/").rstrip("/")
-            )
-            if result["sent"] and event.status == Event.Status.DRAFT:
-                event.status = Event.Status.ACTIVE  # first send flips draft → active (§2.1)
-                event.save(update_fields=["status", "updated_at"])
+            _activate_if_draft(event)
+            result = enqueue(new_invites, "invite", request.build_absolute_uri("/").rstrip("/"))
 
         created = len(new_invites)
-        assisted = sum(1 for i in new_invites if assisted_channels(i))
         if not created:
             msg = "no new guests"
         else:
             parts = [f"{created} guest{'' if created == 1 else 's'} added"]
-            if result["sent"]:
-                parts.append(f"{result['sent']} emailed")
-            if result["failed"]:
-                parts.append(f"{result['failed']} failed")
-            if assisted:
-                parts.append(f"{assisted} to share via the send queue")
+            if result["queued"]:
+                parts.append(
+                    f"{result['queued']} message{'' if result['queued'] == 1 else 's'} queued"
+                )
+            if result["blocked"]:
+                parts.append(f"{result['blocked']} with no channel")
             msg = " · ".join(parts)
-        dash = reverse("event-dashboard", args=[event.pk])
-        return redirect(f"{dash}?{urlencode({'did': 'invited', 'msg': msg})}")
+        target = "event-messages" if result["queued"] or result["blocked"] else "event-dashboard"
+        return redirect(
+            f"{reverse(target, args=[event.pk])}?{urlencode({'did': 'invited', 'msg': msg})}"
+        )
 
     q = request.GET.get("q", "").strip()
     contacts = (
@@ -729,182 +735,253 @@ def event_invite(request, pk):
 
 
 # --------------------------------------------------------------------------- #
-#  Send queue — assisted channels (§6, Phase 5). One share at a time: the
-#  organizer taps through Messenger/WhatsApp invitees; each share is recorded as
-#  an optimistic SHARED delivery (the guest's link click is the real signal).
+#  Messages — the outbox (§2.3). One screen per event listing every message: what
+#  is waiting to go, what needs doing by hand, who can't be reached, what failed,
+#  and everything already sent. Email leaves in a batch on one button; assisted
+#  messages are marked sent by the organizer, never by the app.
 # --------------------------------------------------------------------------- #
-QUEUE_TARGET_KEY = {
-    "invite": "pending_assisted",
-    "nudge": "non_responders_assisted",
-    "update": "notified_assisted",
-    "cancellation": "notified_assisted",
-    "reminder": "reminder_assisted",
-}
-# Which send action hands off to which queue kind + the assisted-target list that
-# decides whether the hand-off is worth making. "retry" has no assisted queue.
-SEND_ACTION_QUEUE = {
-    "invites": ("invite", "pending_assisted"),
-    "nudge": ("nudge", "non_responders_assisted"),
-    "update": ("update", "notified_assisted"),
-    "cancel": ("cancellation", "notified_assisted"),
-    "reminder": ("reminder", "reminder_assisted"),
-}
+MESSAGE_KINDS = [k for k, _ in Delivery.MessageKind.choices]
 
 
-def _skip_session_key(event_pk: int, kind: str) -> str:
-    return f"qskip:{event_pk}:{kind}"
+def _outbox(event):
+    return Delivery.objects.filter(invitation__event=event).select_related(
+        "invitation__contact", "invitation__household", "invitation__event", "channel", "sent_by"
+    )
 
 
-def _get_skips(request, event_pk: int, kind: str) -> set[tuple[int, int]]:
-    """(invitation_id, channel_id) pairs the organizer parked with "skip for now" —
-    remembered in the session so the walk is resumable and skipped cards sink out of
-    the way instead of reappearing first on every revisit (§6)."""
-    out = set()
-    for tag in request.session.get(_skip_session_key(event_pk, kind), []):
-        try:
-            inv, ch = tag.split(":")
-            out.add((int(inv), int(ch)))
-        except (ValueError, AttributeError):
-            continue
-    return out
+def _decorate(deliveries, base_url):
+    """Attach the per-row display bits the template can't work out on its own."""
+    for delivery in deliveries:
+        invitation = delivery.invitation
+        delivery.rsvp_url = rsvp_url(invitation, base_url)
+        delivery.is_assisted = delivery.channel_kind in ASSISTED_KINDS
+        delivery.recipient = invitation.display_name
+        # A household envelope carrying several assisted copies is two taps of the same
+        # link — worth saying on the card so it doesn't look like a duplicate.
+        delivery.share = (
+            share_payload_from(delivery.body, delivery.rsvp_url) if delivery.is_assisted else None
+        )
+        delivery.wa_url = (
+            wa_link(delivery.address_used, delivery.share["text"])
+            if delivery.channel_kind == ContactChannel.Kind.WHATSAPP and delivery.share
+            else None
+        )
+        # "Written before the event changed": only meaningful for edited rows, since
+        # unedited ones are re-rendered at send time anyway (§9).
+        delivery.is_stale = delivery.is_edited and invitation.event.updated_at > delivery.updated_at
+    return deliveries
 
 
-def _add_skip(request, event_pk: int, kind: str, inv_pk: int, ch_pk: int) -> None:
-    key = _skip_session_key(event_pk, kind)
-    parked = request.session.get(key, [])
-    tag = f"{inv_pk}:{ch_pk}"
-    if tag not in parked:
-        parked.append(tag)
-        request.session[key] = parked
-        request.session.modified = True
+@staff_member_required
+def event_messages(request, pk):
+    """The outbox screen. Read-only: every mutation is a POST to `message-action`."""
+    event = get_object_or_404(Event, pk=pk)
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    rows = _decorate(list(_outbox(event).order_by("id")), base_url)
+
+    by_status = {}
+    for row in rows:
+        by_status.setdefault(row.status, []).append(row)
+    pending = by_status.get(Delivery.Status.PENDING, [])
+
+    # Manual rows sort deferred-last, so "skip for now" actually sinks something.
+    manual = sorted(
+        (r for r in pending if r.is_assisted),
+        key=lambda r: (r.deferred_at is not None, r.deferred_at or r.created_at, r.id),
+    )
+
+    kind_filter = request.GET.get("kind", "")
+    status_filter = request.GET.get("status", "")
+    history = [r for r in rows if r.status not in Delivery.OUTSTANDING]
+    if kind_filter in MESSAGE_KINDS:
+        history = [r for r in history if r.message_kind == kind_filter]
+    if status_filter in Delivery.Status.values:
+        history = [r for r in history if r.status == status_filter]
+
+    context = {
+        "event": event,
+        "pending_email": [r for r in pending if not r.is_assisted],
+        "manual": manual,
+        "deferred_count": sum(1 for r in manual if r.deferred_at),
+        "blocked": by_status.get(Delivery.Status.BLOCKED, []),
+        "attention": by_status.get(Delivery.Status.FAILED, [])
+        + by_status.get(Delivery.Status.BOUNCED, []),
+        "history": list(reversed(history)),
+        "sent_count": len(by_status.get(Delivery.Status.SENT, [])),
+        "kind_filter": kind_filter,
+        "status_filter": status_filter,
+        "kind_choices": Delivery.MessageKind.choices,
+        "status_choices": Delivery.Status.choices,
+        "result": {
+            k: request.GET.get(k)
+            for k in ("did", "sent", "failed", "queued", "blocked", "already_queued", "msg")
+        }
+        if request.GET.get("did")
+        else None,
+    }
+    return render(request, "core/messages.html", context)
 
 
-def _reset_skips(request, event_pk: int, kind: str) -> None:
-    if request.session.pop(_skip_session_key(event_pk, kind), None) is not None:
-        request.session.modified = True
+@staff_member_required
+@require_POST
+def event_send_pending(request, pk):
+    """Send every pending email for this event (§7.2). The one automated send."""
+    event = get_object_or_404(Event, pk=pk)
+    result = send_pending_emails(
+        event, request.build_absolute_uri("/").rstrip("/"), actor=request.user
+    )
+    msgs = reverse("event-messages", args=[event.pk])
+    return redirect(f"{msgs}?{urlencode({'did': 'sent', **result})}")
 
 
-def _queue_items(event: Event, kind: str) -> list[tuple[Invitation, ContactChannel]]:
-    """The flattened queue: one card per (envelope, assisted channel) — a household
-    with two WhatsApp parents is two taps carrying the same link. For invites,
-    already-shared copies drop out; notify kinds re-share deliberately (§2.4)."""
-    targets = send_targets(event)
-    items = [
-        (invitation, channel)
-        for invitation in targets[QUEUE_TARGET_KEY[kind]]
-        for channel in assisted_channels(invitation)
-    ]
-    if kind == "invite":
-        shared = shared_channel_pairs(event)
-        items = [(inv, ch) for inv, ch in items if (inv.pk, ch.pk) not in shared]
-    return items
+@staff_member_required
+@require_POST
+def message_action(request, pk):
+    """Per-row actions: mark sent, defer, cancel, retry, revert (§7.4)."""
+    delivery = get_object_or_404(_outbox_row_qs(), pk=pk)
+    event = delivery.invitation.event
+    action = request.POST.get("action", "")
+    back = request.POST.get("next") or reverse("event-messages", args=[event.pk])
+
+    if action == "mark_sent":
+        mark_sent(delivery, request.user)
+        msg = f"Marked sent to {delivery.invitation.display_name}"
+    elif action == "defer":
+        delivery.deferred_at = timezone.now()
+        delivery.save(update_fields=["deferred_at", "updated_at"])
+        msg = "Skipped for now"
+    elif action == "undefer":
+        delivery.deferred_at = None
+        delivery.save(update_fields=["deferred_at", "updated_at"])
+        msg = "Back in the queue"
+    elif action == "cancel":
+        delivery.status = Delivery.Status.CANCELLED
+        delivery.save(update_fields=["status", "updated_at"])
+        msg = "Won't be sent"
+    elif action == "revert":
+        # Back to the template, and back to auto-refreshing from the event.
+        base_url = request.build_absolute_uri("/").rstrip("/")
+        subject, text = render_message(
+            delivery.message_kind, delivery.invitation, rsvp_url(delivery.invitation, base_url)
+        )
+        delivery.subject, delivery.body, delivery.is_edited = subject, text, False
+        delivery.save(update_fields=["subject", "body", "is_edited", "updated_at"])
+        msg = "Reverted to the template"
+    elif action == "retry":
+        if delivery.status not in Delivery.RETRYABLE:
+            return HttpResponseForbidden("Only a failed or bounced message can be retried")
+        # Re-queue rather than re-send: it goes out with the next batch, so a bad address
+        # can be fixed in between. A channel deleted since is a blocked row, not a crash.
+        delivery.status = (
+            Delivery.Status.PENDING if delivery.channel_id else Delivery.Status.BLOCKED
+        )
+        delivery.error = ""
+        delivery.sent_at = None
+        delivery.provider_message_id = ""
+        delivery.save(
+            update_fields=["status", "error", "sent_at", "provider_message_id", "updated_at"]
+        )
+        msg = "Back in the queue"
+    else:
+        return HttpResponseForbidden("Unknown action")
+
+    return redirect(f"{back}{'&' if '?' in back else '?'}{urlencode({'did': action, 'msg': msg})}")
 
 
-def _active_queue(all_items, skips):
-    """Cards still awaiting action: everything outstanding minus what's parked."""
-    return [it for it in all_items if (it[0].pk, it[1].pk) not in skips]
+def _outbox_row_qs():
+    return Delivery.objects.select_related(
+        "invitation__contact", "invitation__household", "invitation__event", "channel"
+    )
 
 
 @staff_member_required
 @require_http_methods(["GET", "POST"])
+def message_edit(request, pk):
+    """Rewrite one queued message in your own words (§7.4).
+
+    The one thing an edit may not do is drop the RSVP link. Every message this app sends
+    exists to deliver that link (§4) — a message without it is a message that can't be
+    answered — so a body missing it is rejected rather than quietly repaired.
+    """
+    delivery = get_object_or_404(_outbox_row_qs(), pk=pk)
+    if delivery.status not in Delivery.OUTSTANDING:
+        return HttpResponseForbidden("Only a message that hasn't gone out can be edited")
+    url = rsvp_url(delivery.invitation, request.build_absolute_uri("/").rstrip("/"))
+    error = None
+
+    if request.method == "POST":
+        subject = request.POST.get("subject", "").strip()
+        body = request.POST.get("body", "").strip()
+        if not body:
+            error = "The message can't be empty."
+        elif url not in body:
+            error = (
+                "Keep their personal link in the message — it's the only way they can "
+                f"reply. Paste it back in: {url}"
+            )
+        else:
+            delivery.subject, delivery.body, delivery.is_edited = subject, body, True
+            delivery.save(update_fields=["subject", "body", "is_edited", "updated_at"])
+            back = reverse("event-messages", args=[delivery.invitation.event_id])
+            return redirect(f"{back}?{urlencode({'did': 'edit', 'msg': 'Message updated'})}")
+        delivery.subject, delivery.body = subject, body  # redisplay what they typed
+
+    return render(
+        request,
+        "core/message_edit.html",
+        {
+            "event": delivery.invitation.event,
+            "m": delivery,
+            "rsvp_url": url,
+            "error": error,
+            "is_email": delivery.channel_kind == ContactChannel.Kind.EMAIL,
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The walkthrough (§8.2) — the same pending manual rows, one card at a time, for
+#  working through a batch on a phone without hunting the list for your place.
+# --------------------------------------------------------------------------- #
+def _walk_queue(event, base_url):
+    """Pending manual rows in card order: un-deferred first, oldest first."""
+    rows = [
+        r
+        for r in _outbox(event).filter(status=Delivery.Status.PENDING).order_by("id")
+        if r.channel_kind in ASSISTED_KINDS
+    ]
+    rows.sort(key=lambda r: (r.deferred_at is not None, r.deferred_at or r.created_at, r.id))
+    return _decorate(rows, base_url)
+
+
+@staff_member_required
 def event_queue(request, pk):
+    """One assisted message at a time. Marking sent or deferring is a POST to
+    `message-action`, which lands back here — the card is a view of the outbox, not a
+    parallel piece of state, so the list and the walk can never disagree."""
     event = get_object_or_404(Event, pk=pk)
-    params = request.POST if request.method == "POST" else request.GET
-    kind = params.get("kind", "invite")
-    if kind not in QUEUE_TARGET_KEY:
-        return HttpResponseForbidden("Unknown queue kind")
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    queue = _walk_queue(event, base_url)
     try:
-        n = max(0, int(params.get("n", 0)))
+        n = max(0, int(request.GET.get("n", 0)))
     except ValueError:
         n = 0
 
-    # "Review skipped" un-parks everyone so they re-enter the walk (GET, idempotent).
-    if request.method == "GET" and request.GET.get("review_skipped") == "1":
-        _reset_skips(request, event.pk, kind)
-        return redirect(f"{reverse('event-queue', args=[event.pk])}?kind={kind}")
-
-    if request.method == "POST":
-        action = request.POST.get("action", "")
-        invitation = get_object_or_404(
-            Invitation, pk=_posted_pk(request, "invitation"), event=event
-        )
-        channel = get_object_or_404(ContactChannel, pk=_posted_pk(request, "channel"))
-        # Integrity: the channel must belong to someone this envelope covers, and be
-        # ACTIVE — a guest-proposed channel is untrusted until approved (§8).
-        covered = (
-            {invitation.contact_id}
-            if invitation.contact_id
-            else set(invitation.household.members.values_list("id", flat=True))
-        )
-        if channel.contact_id not in covered:
-            return HttpResponseForbidden("Channel does not belong to this invitation")
-        if channel.status != ContactChannel.Status.ACTIVE:
-            return HttpResponseForbidden("Channel is not active")
-        if action == "shared":
-            Delivery.objects.create(
-                invitation=invitation,
-                channel=channel,
-                channel_kind=channel.kind,
-                message_kind=kind,
-                address_used=channel.value,
-                status=Delivery.Status.SENT,
-                sent_at=timezone.now(),
-            )
-            invitation.advance_state(Invitation.State.SHARED)
-            # Invite-kind items leave the queue once shared (state moved past PENDING) —
-            # the list shifts under n. Notify kinds re-share, so the card stays put:
-            # step over it. (Skips are excluded so indices line up with the view.)
-            active = _active_queue(_queue_items(event, kind), _get_skips(request, event.pk, kind))
-            if n < len(active) and (active[n][0].pk, active[n][1].pk) == (
-                invitation.pk,
-                channel.pk,
-            ):
-                n += 1
-        elif action == "skip":
-            # Park it: it drops out of the active list, so the next card shifts into n.
-            _add_skip(request, event.pk, kind, invitation.pk, channel.pk)
-        else:
-            return HttpResponseForbidden("Unknown action")
-        return redirect(f"{reverse('event-queue', args=[event.pk])}?kind={kind}&n={n}")
-
-    skips = _get_skips(request, event.pk, kind)
-    all_items = _queue_items(event, kind)
-    active = _active_queue(all_items, skips)
-    skipped_count = len(all_items) - len(active)
-    base_url = request.build_absolute_uri("/").rstrip("/")
-    item = None
-    if n < len(active):
-        invitation, channel = active[n]
-        url = base_url + invitation.rsvp_path
-        payload = share_payload(kind, invitation, url)
-        item = {
-            "invitation": invitation,
-            "channel": channel,
-            "payload": payload,
-            # How many assisted copies this one household envelope carries — so the card
-            # can flag "same link as another member" and the two-taps isn't a surprise.
-            "household_assisted": len(assisted_channels(invitation)),
-            "wa_url": (
-                wa_link(channel.value, payload["text"])
-                if channel.kind == ContactChannel.Kind.WHATSAPP
-                else None
-            ),
-            "last_contacted": invitation.deliveries.aggregate(t=Max("sent_at"))["t"],
-        }
-    context = {
-        "event": event,
-        "kind": kind,
-        "n": n,
-        "total": len(active),
-        "done_count": min(n, len(active)),
-        "skipped_count": skipped_count,
-        "item": item,
-        # Hand-off banner after a send action (§2.4): how the email half went.
-        "from_send": params.get("from_send") == "1",
-        "sent": params.get("sent"),
-        "failed": params.get("failed"),
-    }
-    return render(request, "core/queue.html", context)
+    item = queue[n] if n < len(queue) else None
+    if item:
+        item.household_assisted = sum(1 for r in queue if r.invitation_id == item.invitation_id)
+    return render(
+        request,
+        "core/queue.html",
+        {
+            "event": event,
+            "item": item,
+            "n": n,
+            "total": len(queue),
+            "deferred_count": sum(1 for r in queue if r.deferred_at),
+            "walk_url": reverse("event-queue", args=[event.pk]),
+        },
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -927,17 +1004,40 @@ def invitation_action(request, pk):
 
     if action == "revoke":
         invitation.advance_state(Invitation.State.REVOKED)
-        return _dash(invitation.event_id, action, msg="Invitation revoked — link now dead")
+        # Uninviting someone must not leave their invite sitting in the queue, waiting to
+        # be sent to a guest who is no longer invited (§9).
+        dropped = cancel_pending_for(invitation)
+        msg = "Invitation revoked — link now dead"
+        if dropped:
+            msg += f" · {dropped} queued message{'' if dropped == 1 else 's'} dropped"
+        return _dash(invitation.event_id, action, msg=msg)
     if action == "regenerate":
         # New capability token: the old link is dead, the invitation lives on (§2.3).
         invitation.token = make_token()
         invitation.save(update_fields=["token", "updated_at"])
+        # Queued messages still carry the *old* link in their snapshot. Re-render the
+        # unedited ones now; an edited one is flagged so the organizer fixes it by hand
+        # rather than having their words silently rewritten.
+        _refresh_queued_links(invitation, base_url)
         return _dash(invitation.event_id, action, msg="New link generated — old one is dead")
     if action in ("resend", "nudge"):
         kind = "invite" if action == "resend" else "nudge"
-        result = dispatch_email([invitation], kind, base_url)
+        result = enqueue([invitation], kind, base_url)
         return _dash(invitation.event_id, action, **result)
     return HttpResponseForbidden("Unknown action")
+
+
+def _refresh_queued_links(invitation, base_url: str) -> None:
+    """Re-snapshot pending messages after the token changed, so nothing goes out
+    pointing at a link that's already dead."""
+    for delivery in invitation.deliveries.filter(status=Delivery.Status.PENDING):
+        if delivery.is_edited:
+            continue
+        subject, text = render_message(
+            delivery.message_kind, invitation, rsvp_url(invitation, base_url)
+        )
+        delivery.subject, delivery.body = subject, text
+        delivery.save(update_fields=["subject", "body", "updated_at"])
 
 
 @staff_member_required

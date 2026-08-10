@@ -1,0 +1,214 @@
+{% extends "core/org_base.html" %}
+{% block title %}Messages — {{ event.title }}{% endblock %}
+{% block bodyclass %}dash{% endblock %}
+{% block content %}
+<main class="wrap wide">
+
+  <p class="crumbs"><a href="{% url 'event-dashboard' event.pk %}">← dashboard</a></p>
+  <h1>Messages</h1>
+  <p class="meta">{{ event.title }} · {{ event.starts_at|date:"D, j M Y · g:i A" }}</p>
+
+  {% if result %}
+  <div class="banner {% if result.failed and result.failed != '0' %}bad{% else %}ok{% endif %}">
+    {% if result.did == 'sent' %}✅ {{ result.sent }} email{{ result.sent|pluralize }} sent{% if result.failed and result.failed != '0' %} · <span class="warn">{{ result.failed }} failed</span>{% endif %}.
+    {% elif result.msg %}{{ result.msg }}.
+    {% else %}{{ result.queued }} message{{ result.queued|pluralize }} queued{% if result.blocked and result.blocked != '0' %} · {{ result.blocked }} with no channel{% endif %}{% if result.already_queued and result.already_queued != '0' %} · {{ result.already_queued }} already queued{% endif %}.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% comment %}The summary strip: the whole point of this screen is that these numbers
+  exist in one place at all.{% endcomment %}
+  <section class="card msg-summary">
+    <span class="ms-stat"><strong>{{ pending_email|length }}</strong> pending email</span>
+    <span class="ms-stat"><strong>{{ manual|length }}</strong> manual to do</span>
+    <span class="ms-stat"><strong>{{ blocked|length }}</strong> can't send</span>
+    <span class="ms-stat muted"><strong>{{ sent_count }}</strong> sent</span>
+    <span class="ms-stat {% if attention %}warn{% else %}muted{% endif %}"><strong>{{ attention|length }}</strong> need attention</span>
+  </section>
+
+  {# ---------------------------------------------------------------- pending email #}
+  {% if pending_email %}
+  <section class="card">
+    <div class="msg-head">
+      <h2>✉️ Pending email — {{ pending_email|length }}</h2>
+      <form method="post" action="{% url 'event-send-pending' event.pk %}"
+            data-confirm="Send {{ pending_email|length }} email{{ pending_email|pluralize }} now?">
+        {% csrf_token %}
+        <button class="save">Send all {{ pending_email|length }}</button>
+      </form>
+    </div>
+    <ul class="msg-list">
+      {% for m in pending_email %}
+      <li class="msg-row">
+        <details>
+          <summary>
+            <span class="mr-who">{{ m.recipient }}</span>
+            <span class="mr-addr">{{ m.address_used }}</span>
+            <span class="badge">{{ m.get_message_kind_display|lower }}</span>
+            {% if m.is_edited %}<span class="badge edited">edited</span>{% endif %}
+            {% if m.is_stale %}<span class="badge warn-badge">event changed since</span>{% endif %}
+          </summary>
+          <div class="mr-body">
+            <div class="mr-subject"><strong>Subject:</strong> {{ m.subject }}</div>
+            <pre class="q-preview">{{ m.body }}</pre>
+            {% if not m.is_edited %}
+            <p class="sub">Uses the current event details — edit the event and this updates itself.</p>
+            {% endif %}
+            <div class="mr-actions">
+              <a class="btn" href="{% url 'message-edit' m.pk %}">Edit</a>
+              {% if m.is_edited %}{% include "core/_msg_action.html" with m=m action="revert" label="Revert to template" %}{% endif %}
+              {% include "core/_msg_action.html" with m=m action="cancel" label="Don't send" %}
+            </div>
+          </div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# --------------------------------------------------------------- manual sends #}
+  {% if manual %}
+  <section class="card">
+    <div class="msg-head">
+      <h2>💬 Manual sends — {{ manual|length }} to do</h2>
+      <a class="btn" href="{% url 'event-queue' event.pk %}">Work through them →</a>
+    </div>
+    {% if deferred_count %}<p class="sub">{{ deferred_count }} skipped for now — they've sunk to the bottom.</p>{% endif %}
+    <ul class="msg-list">
+      {% for m in manual %}
+      <li class="msg-row{% if m.deferred_at %} deferred{% endif %}">
+        <details>
+          <summary>
+            <span class="mr-who">{{ m.recipient }}</span>
+            <span class="mr-addr">{{ m.get_channel_kind_display }}{% if m.address_used %} · {{ m.address_used }}{% endif %}</span>
+            <span class="badge">{{ m.get_message_kind_display|lower }}</span>
+            {% if m.is_edited %}<span class="badge edited">edited</span>{% endif %}
+            {% if m.deferred_at %}<span class="badge muted-badge">skipped</span>{% endif %}
+          </summary>
+          <div class="mr-body">
+            <pre class="q-preview">{{ m.share.text }}</pre>
+            <div class="mr-actions">
+              {% if m.wa_url %}
+              <a class="btn" href="{{ m.wa_url }}" target="_blank" rel="noopener">Open WhatsApp ↗</a>
+              {% else %}
+              <button class="btn share-btn" type="button"
+                      data-text="{{ m.share.share_text }}" data-url="{{ m.share.url }}">Share…</button>
+              {% endif %}
+              <button class="btn copy-btn" type="button" data-text="{{ m.share.text }}">Copy</button>
+              {% include "core/_msg_action.html" with m=m action="mark_sent" label="Mark sent" primary=1 %}
+              <a class="btn" href="{% url 'message-edit' m.pk %}">Edit</a>
+              {% if m.deferred_at %}
+                {% include "core/_msg_action.html" with m=m action="undefer" label="Un-skip" %}
+              {% else %}
+                {% include "core/_msg_action.html" with m=m action="defer" label="Skip for now" %}
+              {% endif %}
+              {% include "core/_msg_action.html" with m=m action="cancel" label="Don't send" %}
+            </div>
+          </div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# ------------------------------------------------------------------- blocked #}
+  {% if blocked %}
+  <section class="card">
+    <h2>⚠️ Can't send — {{ blocked|length }}</h2>
+    <p class="sub">No usable channel. Add one, or tell them in person and mark it done.</p>
+    <ul class="msg-list">
+      {% for m in blocked %}
+      <li class="msg-row">
+        <div class="mr-flat">
+          <span class="mr-who">{{ m.recipient }}</span>
+          <span class="mr-addr">no channel</span>
+          <span class="badge">{{ m.get_message_kind_display|lower }}</span>
+          <span class="mr-actions">
+            {% if m.invitation.contact_id %}
+            <a class="btn" href="{% url 'contact-edit' m.invitation.contact_id %}">Add a channel</a>
+            {% endif %}
+            {% include "core/_msg_action.html" with m=m action="mark_sent" label="Mark done" %}
+            {% include "core/_msg_action.html" with m=m action="cancel" label="Don't send" %}
+          </span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# ----------------------------------------------------------- needs attention #}
+  {% if attention %}
+  <section class="card">
+    <h2>↺ Needs attention — {{ attention|length }}</h2>
+    <ul class="msg-list">
+      {% for m in attention %}
+      <li class="msg-row">
+        <div class="mr-flat">
+          <span class="mr-who">{{ m.recipient }}</span>
+          <span class="mr-addr">{{ m.address_used }}</span>
+          <span class="badge st-{{ m.status }}">{{ m.get_status_display|lower }}</span>
+          {% if m.error %}<span class="mr-err">{{ m.error|truncatechars:80 }}</span>{% endif %}
+          <span class="mr-actions">
+            {% include "core/_msg_action.html" with m=m action="retry" label="Retry" %}
+          </span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if not pending_email and not manual and not blocked and not attention %}
+  <section class="card center">
+    <h1>🎉</h1>
+    <p><strong>Nothing waiting.</strong> Every message for this event has gone out.</p>
+    <p class="sub"><a href="{% url 'event-send' event.pk %}">Queue something new →</a></p>
+  </section>
+  {% endif %}
+
+  {# -------------------------------------------------------------- all messages #}
+  <section class="card">
+    <h2>All messages</h2>
+    <form class="msg-filters" method="get">
+      <select name="kind" onchange="this.form.submit()">
+        <option value="">any message</option>
+        {% for value, label in kind_choices %}
+        <option value="{{ value }}" {% if kind_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select name="status" onchange="this.form.submit()">
+        <option value="">any status</option>
+        {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn">Filter</button></noscript>
+      {% if kind_filter or status_filter %}
+      <a class="linkish" href="{% url 'event-messages' event.pk %}">clear</a>
+      {% endif %}
+    </form>
+    <ul class="msg-list history">
+      {% for m in history %}
+      <li class="msg-row st-{{ m.status }}">
+        <div class="mr-flat">
+          <span class="mr-status">{% if m.status == 'sent' %}✓{% elif m.status == 'cancelled' %}—{% else %}!{% endif %}</span>
+          <span class="mr-when">{{ m.sent_at|date:"D j M, g:i A"|default:"—" }}</span>
+          <span class="mr-who">{{ m.recipient }}</span>
+          <span class="mr-addr">{{ m.address_used|default:m.get_channel_kind_display|default:"no channel" }}</span>
+          <span class="badge">{{ m.get_message_kind_display|lower }}</span>
+          <span class="badge st-{{ m.status }}">{{ m.get_status_display|lower }}</span>
+          {% if m.sent_by %}<span class="mr-by">by {{ m.sent_by.get_short_name|default:m.sent_by.username }}</span>{% endif %}
+        </div>
+      </li>
+      {% empty %}
+      <li class="msg-row"><div class="mr-flat sub">Nothing sent yet.</div></li>
+      {% endfor %}
+    </ul>
+  </section>
+
+</main>
+{% endblock %}
