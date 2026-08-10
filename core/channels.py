@@ -212,9 +212,10 @@ def dispatch_email(invitations, kind: str, base_url: str) -> dict:
             delivery = Delivery.objects.create(
                 invitation=invitation,
                 channel=channel,
-                kind=ContactChannel.Kind.EMAIL,
+                channel_kind=ContactChannel.Kind.EMAIL,
+                message_kind=kind,
                 address_used=channel.value,
-                status=Delivery.Status.QUEUED,
+                status=Delivery.Status.PENDING,
             )
             messages.append(
                 {
@@ -272,12 +273,16 @@ NOTIFIED_STATES = (S.SENT, S.SHARED, S.OPENED, S.RESPONDED, S.BOUNCED)  # ever r
 
 
 def shared_channel_pairs(event: Event) -> set[tuple[int, int]]:
-    """(invitation_id, channel_id) pairs already marked SHARED — a household stays
-    in the invite queue until *each* assisted copy has gone out."""
+    """(invitation_id, channel_id) pairs whose assisted copy has gone out — a household
+    stays in the invite queue until *each* one has. Assisted sends are SENT rows on an
+    assisted channel: there is no separate SHARED status, because "sent" for a manual
+    channel already means the organizer confirmed they sent it."""
     return set(
-        Delivery.objects.filter(invitation__event=event, status=Delivery.Status.SHARED).values_list(
-            "invitation_id", "channel_id"
-        )
+        Delivery.objects.filter(
+            invitation__event=event,
+            status=Delivery.Status.SENT,
+            channel_kind__in=ASSISTED_KINDS,
+        ).values_list("invitation_id", "channel_id")
     )
 
 

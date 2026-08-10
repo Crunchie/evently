@@ -52,7 +52,7 @@ def sent_delivery(db):
     return Delivery.objects.create(
         invitation=invitation,
         channel=channel,
-        kind=ContactChannel.Kind.EMAIL,
+        channel_kind=ContactChannel.Kind.EMAIL,
         address_used="a@x.com",
         status=Delivery.Status.SENT,
         provider_message_id="re_123",

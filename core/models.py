@@ -383,33 +383,99 @@ class InvitationAttendee(TimestampedModel):
 # --------------------------------------------------------------------------- #
 class Delivery(TimestampedModel):
     """
-    One send attempt over one channel. Doubles as the outbound queue: the cron management
-    command (§9) processes rows in status=QUEUED. A household envelope may spawn several.
+    The outbox: one row per (envelope, channel, message) that needs to go out.
+
+    Rows are written **pending** *before* anything is sent — that's the whole point (§2.3).
+    Email rows leave in a batch when the organizer presses "Send all pending emails";
+    assisted (WhatsApp/Messenger) rows are marked sent **by hand** once the organizer has
+    actually shared them. Nothing is ever marked sent on the organizer's behalf, so "sent"
+    always means a human either watched the provider accept it or said "I did that one".
+
+    A household envelope spawns several rows (one per member channel, same link).
     """
 
     class Status(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        SENT = "sent", "Sent"  # automated: provider accepted
-        SHARED = "shared", "Shared"  # assisted: share sheet / deep link invoked (optimistic)
-        BOUNCED = "bounced", "Bounced"
-        FAILED = "failed", "Failed"
+        PENDING = "pending", "Pending"  # queued, nothing sent yet
+        SENT = "sent", "Sent"  # email: provider accepted / manual: organizer confirmed
+        FAILED = "failed", "Failed"  # send attempt errored — retryable
+        BOUNCED = "bounced", "Bounced"  # provider bounce webhook
+        BLOCKED = "blocked", "No channel"  # nobody to send to; needs a channel or a hand-wave
+        CANCELLED = "cancelled", "Cancelled"  # organizer decided not to send it
+
+    class MessageKind(models.TextChoices):
+        """What this message *says* — distinct from `channel_kind` (how it travels).
+        Mirrors messaging.KINDS."""
+
+        INVITE = "invite", "Invite"
+        NUDGE = "nudge", "Nudge"
+        UPDATE = "update", "Update"
+        CANCELLATION = "cancellation", "Cancellation"
+        REMINDER = "reminder", "Reminder"
+
+    # Statuses that still owe the organizer something — the Messages screen's top half.
+    OUTSTANDING = (Status.PENDING, Status.BLOCKED)
+    # Statuses a retry can rescue back into the outbox.
+    RETRYABLE = (Status.FAILED, Status.BOUNCED)
 
     invitation = models.ForeignKey(Invitation, on_delete=models.CASCADE, related_name="deliveries")
     channel = models.ForeignKey(
         ContactChannel, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    kind = models.CharField(max_length=20, choices=ContactChannel.Kind.choices)
+    # How it travels. Blank on BLOCKED rows — there is no channel to travel on.
+    channel_kind = models.CharField(max_length=20, choices=ContactChannel.Kind.choices, blank=True)
+    message_kind = models.CharField(max_length=20, choices=MessageKind.choices, blank=True)
     address_used = models.CharField(max_length=255, blank=True)  # snapshot at send time
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     provider_message_id = models.CharField(max_length=255, blank=True)  # Resend id, for bounces
     error = models.TextField(blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
 
+    # The message itself, snapshotted at enqueue so the organizer can read exactly what
+    # will go out — and edit it. An *unedited* row is re-rendered from current event data
+    # at send time (§4.2): previewability without the stale-content trap where fixing a
+    # typo in the event leaves every queued message carrying the old wording.
+    subject = models.CharField(max_length=255, blank=True)
+    body = models.TextField(blank=True)
+    is_edited = models.BooleanField(default=False)
+    # "Skip for now" in the walkthrough. Persisted, not session state, so the walk is
+    # resumable and two devices agree.
+    deferred_at = models.DateTimeField(null=True, blank=True)
+    # Who pressed send / marked it done — attribution only (single-tenant, §8).
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
     class Meta:
-        indexes = [models.Index(fields=["status"])]  # queue scan: status=QUEUED
+        constraints = [
+            # Don't double-queue the same message to the same channel: pressing "queue
+            # nudge" twice is a no-op, not two messages.
+            models.UniqueConstraint(
+                fields=["invitation", "channel", "message_kind"],
+                condition=Q(status="pending"),
+                name="one_pending_message_per_channel",
+            ),
+            # Same guard for no-channel rows, where `channel` is NULL and SQLite treats
+            # every NULL as distinct — the constraint above would never fire for them.
+            models.UniqueConstraint(
+                fields=["invitation", "message_kind"],
+                condition=Q(status="blocked", channel__isnull=True),
+                name="one_blocked_message_per_invitation",
+            ),
+        ]
+        indexes = [models.Index(fields=["status", "message_kind"])]  # outbox scan
 
     def __str__(self):
-        return f"{self.invitation} · {self.kind} · {self.get_status_display()}"
+        return (
+            f"{self.invitation} · {self.channel_kind or 'no channel'} · {self.get_status_display()}"
+        )
+
+    @property
+    def is_outstanding(self) -> bool:
+        return self.status in self.OUTSTANDING
 
 
 # --------------------------------------------------------------------------- #

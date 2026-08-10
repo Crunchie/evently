@@ -200,7 +200,7 @@ def test_short_provider_response_fails_the_unmatched_tail(staff_client, event, m
     resp = staff_client.post(send_url(event), {"action": "invites"})
     assert "sent=1" in resp["Location"] and "failed=1" in resp["Location"]
     assert Delivery.objects.filter(status=Delivery.Status.FAILED).count() == 1
-    assert not Delivery.objects.filter(status=Delivery.Status.QUEUED).exists()
+    assert not Delivery.objects.filter(status=Delivery.Status.PENDING).exists()
 
 
 def test_household_sends_same_link_to_each_parent(staff_client, event, fake_send):

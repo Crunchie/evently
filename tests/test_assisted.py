@@ -120,7 +120,7 @@ def test_queue_walk_share_and_done(staff_client, event):
     inv_dave.refresh_from_db()
     assert inv_dave.state == State.SHARED
     delivery = inv_dave.deliveries.get()
-    assert delivery.status == Delivery.Status.SHARED and delivery.kind == Kind.WHATSAPP
+    assert delivery.status == Delivery.Status.SENT and delivery.channel_kind == Kind.WHATSAPP
 
     page = staff_client.get(queue_url(event, kind="invite")).content.decode()
     assert "1 of 1" in page and "Ana" in page and "Share" in page  # messenger card

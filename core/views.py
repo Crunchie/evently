@@ -844,9 +844,10 @@ def event_queue(request, pk):
             Delivery.objects.create(
                 invitation=invitation,
                 channel=channel,
-                kind=channel.kind,
+                channel_kind=channel.kind,
+                message_kind=kind,
                 address_used=channel.value,
-                status=Delivery.Status.SHARED,
+                status=Delivery.Status.SENT,
                 sent_at=timezone.now(),
             )
             invitation.advance_state(Invitation.State.SHARED)

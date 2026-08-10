@@ -240,7 +240,7 @@ def test_dashboard_surfaces_bounce_even_when_invitation_opened(staff_client, eve
     inv.advance_state(State.OPENED)  # link clicked → ladder keeps envelope above BOUNCED
     Delivery.objects.create(
         invitation=inv,
-        kind=Kind.EMAIL,
+        channel_kind=Kind.EMAIL,
         address_used="wrong@x.com",
         status=Delivery.Status.BOUNCED,
         error="the account does not exist",
@@ -256,10 +256,16 @@ def test_dashboard_bounce_cleared_by_later_successful_delivery(staff_client, eve
     contact = contact_with_email("Fixed", "good@x.com")
     inv = Invitation.objects.create(event=event, contact=contact)
     Delivery.objects.create(
-        invitation=inv, kind=Kind.EMAIL, address_used="old@x.com", status=Delivery.Status.BOUNCED
+        invitation=inv,
+        channel_kind=Kind.EMAIL,
+        address_used="old@x.com",
+        status=Delivery.Status.BOUNCED,
     )
     Delivery.objects.create(  # later resend to a corrected address succeeded
-        invitation=inv, kind=Kind.EMAIL, address_used="good@x.com", status=Delivery.Status.SENT
+        invitation=inv,
+        channel_kind=Kind.EMAIL,
+        address_used="good@x.com",
+        status=Delivery.Status.SENT,
     )
     resp = staff_client.get(reverse("event-dashboard", args=[event.pk]))
     assert b"email bounced" not in resp.content  # latest delivery is SENT → warning cleared

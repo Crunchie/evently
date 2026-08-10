@@ -193,8 +193,8 @@ class InvitationAttendeeAdmin(admin.ModelAdmin):
 
 @admin.register(Delivery)
 class DeliveryAdmin(admin.ModelAdmin):
-    list_display = ("invitation", "kind", "status", "sent_at")
-    list_filter = ("status", "kind")
+    list_display = ("invitation", "message_kind", "channel_kind", "status", "sent_at")
+    list_filter = ("status", "message_kind", "channel_kind")
     list_select_related = ("invitation__event", "invitation__contact", "invitation__household")
 
 
