@@ -1057,6 +1057,29 @@ def invitation_override(request, pk):
     return _dash(invitation.event_id, "override", msg="RSVP updated on their behalf")
 
 
+def _requeue_blocked_for(contact, request) -> int:
+    """Re-queue this contact's blocked messages now that they have a usable channel.
+
+    Covers both shapes of envelope: their own, and any household one they're part of —
+    a household is blocked only when *nobody* in it was reachable, so one member getting
+    a channel unblocks the whole envelope.
+    """
+    blocked = Delivery.objects.filter(
+        status=Delivery.Status.BLOCKED,
+        invitation__state__in=[s for s in Invitation.State.values if s != Invitation.State.REVOKED],
+    ).filter(Q(invitation__contact=contact) | Q(invitation__household=contact.household_id))
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    count = 0
+    for row in blocked.select_related("invitation"):
+        result = enqueue([row.invitation], row.message_kind, base_url)
+        if result["queued"]:
+            # The blocked row did its job — it's superseded by real ones now.
+            row.status = Delivery.Status.CANCELLED
+            row.save(update_fields=["status", "updated_at"])
+            count += result["queued"]
+    return count
+
+
 @staff_member_required
 @require_POST
 def channel_request_action(request, pk):
@@ -1095,7 +1118,14 @@ def channel_request_action(request, pk):
             channel.status = ContactChannel.Status.ACTIVE
             channel.is_preferred = True
             channel.save(update_fields=["status", "is_preferred", "updated_at"])
-        return done(action, f"{channel.contact.name} → {channel.get_kind_display()}")
+        msg = f"{channel.contact.name} → {channel.get_kind_display()}"
+        # Approving a channel for someone we couldn't reach is exactly the moment their
+        # stuck message becomes sendable — re-queue it rather than leaving them parked
+        # under "can't send" with the fix already in place (§9).
+        requeued = _requeue_blocked_for(channel.contact, request)
+        if requeued:
+            msg += f" · {requeued} queued message{'' if requeued == 1 else 's'} unblocked"
+        return done(action, msg)
     if action == "reject":
         name = channel.contact.name
         channel.delete()
@@ -1310,6 +1340,35 @@ def _set_tags(contact, raw: str) -> None:
     contact.tags.set(tags)
 
 
+def _block_pending_on_deleted_channels(dropped) -> None:
+    """Move queued messages off channels about to be deleted.
+
+    Only one blocked row may exist per (invitation, message kind) — deleting a channel
+    SET_NULLs the delivery, and a household that loses both parents' numbers at once
+    would otherwise trip that constraint mid-delete. The first row becomes the "can't
+    send" entry; the rest collapse into it as cancelled, since they'd all say the same
+    thing.
+    """
+    rows = list(Delivery.objects.filter(channel__in=dropped, status=Delivery.Status.PENDING))
+    taken = set(
+        Delivery.objects.filter(
+            invitation_id__in=[r.invitation_id for r in rows],
+            status=Delivery.Status.BLOCKED,
+            channel__isnull=True,
+        ).values_list("invitation_id", "message_kind")
+    )
+    for row in rows:
+        key = (row.invitation_id, row.message_kind)
+        if key in taken:
+            row.status = Delivery.Status.CANCELLED
+        else:
+            row.status = Delivery.Status.BLOCKED
+            row.address_used = ""
+            row.channel_kind = ""
+            taken.add(key)
+        row.save(update_fields=["status", "address_used", "channel_kind", "updated_at"])
+
+
 def _save_channels(contact, rows: list[dict]) -> None:
     """Diff the submitted rows against the contact's ACTIVE channels: update by id,
     create new ones, delete ACTIVE channels no longer present (preserves Delivery audit
@@ -1336,9 +1395,14 @@ def _save_channels(contact, rows: list[dict]) -> None:
         seen_ids.add(channel.pk)
         if row["preferred"]:
             preferred_channel = channel
-    for pk, channel in existing.items():
-        if pk not in seen_ids:
-            channel.delete()
+    dropped = [channel for pk, channel in existing.items() if pk not in seen_ids]
+    # A queued message on a channel you just deleted must not still go out: address_used
+    # is a snapshot, so the row would happily send to the address you removed. Park it as
+    # blocked and let the organizer re-queue it on whatever replaced the channel (§9).
+    if dropped:
+        _block_pending_on_deleted_channels(dropped)
+    for channel in dropped:
+        channel.delete()
     if preferred_channel is not None:
         preferred_channel.is_preferred = True
         preferred_channel.save(update_fields=["is_preferred", "updated_at"])

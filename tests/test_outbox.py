@@ -253,3 +253,84 @@ def test_regenerating_a_token_refreshes_queued_links(staff_client, email_row):
 
 def test_edit_requires_staff(client, email_row):
     assert client.get(reverse("message-edit", args=[email_row.pk])).status_code == 302
+
+
+# --------------------------------------------------------------------------- #
+#  Channels changing under a queued message (§9)
+# --------------------------------------------------------------------------- #
+def test_deleting_a_channel_blocks_its_queued_message(staff_client, event):
+    """address_used is a snapshot — without this the row would still send to the
+    address you just deleted."""
+    kate = with_channel("Kate", Kind.EMAIL, "old@x.com")
+    inv = Invitation.objects.create(event=event, contact=kate)
+    enqueue([inv], "invite", "http://testserver")
+
+    # Save the contact form with the channel row removed.
+    staff_client.post(
+        reverse("contact-edit", args=[kate.pk]),
+        {
+            "name": "Kate",
+            "nickname": "",
+            "birth_year": "",
+            "household": "",
+            "notes": "",
+            "tags": "",
+        },
+    )
+
+    row = inv.deliveries.get()
+    assert row.status == Status.BLOCKED
+    assert row.address_used == "" and row.channel_id is None
+
+
+def test_household_losing_every_channel_collapses_to_one_blocked_row(staff_client, event):
+    """Two rows can't both become blocked — the partial unique constraint allows one per
+    (invitation, kind), so the rest collapse into it."""
+    hh = Household.objects.create(name="The Hendersons")
+    jane = with_channel("Jane", Kind.WHATSAPP, "+64211111111", household=hh)
+    mark = with_channel("Mark", Kind.WHATSAPP, "+64222222222", household=hh)
+    inv = Invitation.objects.create(event=event, household=hh)
+    enqueue([inv], "invite", "http://testserver")
+    assert inv.deliveries.count() == 2
+
+    for contact in (jane, mark):
+        staff_client.post(
+            reverse("contact-edit", args=[contact.pk]),
+            {
+                "name": contact.name,
+                "nickname": "",
+                "birth_year": "",
+                "household": str(hh.pk),
+                "notes": "",
+                "tags": "",
+            },
+        )
+
+    statuses = sorted(d.status for d in inv.deliveries.all())
+    assert statuses == [Status.BLOCKED, Status.CANCELLED]
+
+
+def test_approving_a_channel_requeues_a_blocked_message(staff_client, event):
+    unreachable = Contact.objects.create(name="Ngaire")
+    inv = Invitation.objects.create(event=event, contact=unreachable)
+    enqueue([inv], "invite", "http://testserver")
+    assert inv.deliveries.get().status == Status.BLOCKED
+
+    proposed = ContactChannel.objects.create(
+        contact=unreachable,
+        kind=Kind.EMAIL,
+        value="ngaire@x.com",
+        status=ContactChannel.Status.PROPOSED,
+        source=ContactChannel.Source.GUEST,
+        requested_via=inv,
+    )
+    resp = staff_client.post(
+        reverse("channel-request-action", args=[proposed.pk]),
+        {"action": "approve", "event": str(event.pk)},
+    )
+    assert resp.status_code == 302
+    assert "unblocked" in resp["Location"]
+
+    assert inv.deliveries.filter(status=Status.BLOCKED).count() == 0
+    live = inv.deliveries.get(status=Status.PENDING)
+    assert live.address_used == "ngaire@x.com"
