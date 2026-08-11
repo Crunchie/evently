@@ -80,6 +80,10 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 .info-body p { line-height: 1.6; margin: 0 0 .8rem; }
 .info-body .fine { color: var(--muted); font-size: .88rem; }
 .info-body .save { margin-top: .4rem; }
+.info-more { margin: 0 0 .8rem; }
+/* .info-more summary { cursor: pointer; font-weight: 700; } */
+.info-more summary { cursor: pointer; color: var(--muted); font-size: .88rem;  }
+.info-more p { margin: .5rem 0 0; font-size: .88rem; }
 
 /* ---------- landing (bare apex "/") — same sunset hero, deliberate dead-end ---------- */
 .landing {

@@ -243,6 +243,23 @@ A one-time "what is this?" note from the host, opened on first visit and via the
        <strong>Can't</strong>. No sign-up or anything, should be easy as..</p>
     <p>You can save the event to your calendar and also update your preferred contact method (email, WhatsApp, or Messenger).</p>
     <p>Cheers, <strong>Sam</strong></p>
+    <details class="info-more">
+      <summary>A note on AI</summary>
+      <p>While I heavily used AI to help with the development of this site, No AI is used in the final
+        product. Event and guest data is stored in a database I own and is not shared with any AI service. 
+      </p>
+    </details>
+    <details class="info-more">
+      <summary>Tech Details</summary>
+      <p>The whole thing runs on a small server in my house. Your name, RSVP and contact details 
+        live in a database on that machine; nothing is sold, shared or used to build a profile of you,
+        and there are no ads, trackers or analytics anywhere on this page.</p>
+      <p>A little plumbing does reach the outside world: an encrypted Cloudflare tunnel so
+        the site is reachable without exposing my home network, a mail service to
+        deliver invite emails, an encrypted off-site backup so a dead hard drive can't lose
+        your RSVP, and Google for the embedded map. It's built with Django and Python.</p>
+      <p> Check out the source code on <a href="https://github.com/Crunchie/evently" target="_blank" rel="noopener noreferrer">GitHub</a>.  </p>
+    </details>
     <p class="fine">Your link is just for you — please don't share it.</p>
     <button type="button" class="save" data-info-close>Got it</button>
   </div>

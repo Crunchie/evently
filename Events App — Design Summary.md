@@ -747,6 +747,16 @@ ingress. One repo, one `docker compose up`.
 *Step-by-step build order, concrete tooling files, and per-phase gates lived in a
 separate build plan, kept privately now that the phases are built.*
 
+**Image ownership: no `chown -R /srv`.** The non-root `appuser` is created in an early,
+always-cached layer and only `/data` is chowned. Nothing writes to `/srv` at runtime —
+the DB lives in `DATA_DIR`, staticfiles are read-only, and root-owned files are already
+world-readable. A recursive chown over `/srv` sat after `COPY . .`, so it re-ran on
+every code change, and because overlayfs copies a file up on any metadata change it
+duplicated the entire venv: a 101MB layer on top of the 101MB venv layer, for nothing.
+Note also that compose overrides the runtime user with `${PUID}:${PGID}` (so the host
+owns the bind-mounted `./data`), which means the baked-in `appuser` uid isn't even what
+runs in production — one more reason the recursive chown bought nothing.
+
 *Alternatives considered:* FastAPI/Flask + Jinja2 — lighter but hand-rolls admin,
 forms, CSRF, migrations for no gain at this scale (FastAPI's strength is APIs; this is
 a server-rendered app). Go — nice single-binary deploys, wrong trade against Python
