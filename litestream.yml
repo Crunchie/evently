@@ -7,7 +7,7 @@
 #      token exist (§9): R2 is S3-compatible; the free tier
 #      (10 GB) dwarfs this database forever. The bucket MUST be private (§8 item 5).
 #
-# Restore (either replica; drilled 2026-07-04 against `file`):
+# Restore (drilled 2026-08-18 against `s3`; previously 2026-07-04 against `file`):
 #   docker compose run --rm litestream restore -o /data/restored.db /data/evently.db
 dbs:
   - path: /data/evently.db
@@ -16,7 +16,10 @@ dbs:
       #   path: /data/backups/evently
       - type: s3
         bucket: evently-backups
-        path: evently
+        # Repointed 2026-08-18 when the test database was discarded for a fresh one.
+        # The old `evently` prefix still holds the test DB's history — delete it in
+        # the R2 dashboard once this replica has proven itself.
+        path: evently-v2
         endpoint: ${LITESTREAM_ENDPOINT}      # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
         region: auto                          # R2 ignores region; litestream wants one
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
